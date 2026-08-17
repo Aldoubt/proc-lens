@@ -179,7 +179,10 @@ fn handle_key(
     }
 
     if state.help_open {
-        if matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')) {
+        if matches!(
+            key.code,
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')
+        ) {
             state.help_open = false;
         }
         return InputAction::None;
