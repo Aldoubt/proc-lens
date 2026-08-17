@@ -217,3 +217,32 @@ fn compact_command_hides_noisy_browser_argv() {
     assert!(label.chars().count() <= 32);
     assert!(!label.contains("-prefsHandle"));
 }
+
+#[test]
+fn search_filter_falls_back_to_closest_previous_visual_row() {
+    let mut first = process(10, 100, 30.0, 100);
+    first.snapshot.name = "keep-first".into();
+    first.snapshot.command = vec!["keep-first".into()];
+
+    let mut selected = process(20, 200, 20.0, 100);
+    selected.snapshot.name = "drop-selected".into();
+    selected.snapshot.command = vec!["drop-selected".into()];
+
+    let mut last = process(30, 300, 10.0, 100);
+    last.snapshot.name = "keep-last".into();
+    last.snapshot.command = vec!["keep-last".into()];
+
+    let mut state = UiState {
+        selected_pid: Some(20),
+        ..UiState::default()
+    };
+    let mut model = PresentationModel::new(snapshot(vec![first, selected, last]), &mut state);
+    let previous_index = model.selected_index(&state);
+    assert_eq!(previous_index, Some(1));
+
+    state.query = "keep".into();
+    model.reorder_preserving_index(&mut state, previous_index);
+
+    assert_eq!(state.selected_pid, Some(30));
+    assert_eq!(model.selected_index(&state), Some(1));
+}
