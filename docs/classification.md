@@ -1,4 +1,4 @@
-# proc-lens v0.2.1 classification and provenance rules
+# proc-lens v0.2.2 classification and provenance rules
 
 proc-lens intentionally separates two concepts:
 
@@ -34,95 +34,25 @@ The environment-only rules (`ROS_VERSION=2` and `AMENT_PREFIX_PATH`) are intenti
 
 The resolver checks both `/proc/<pid>/exe` and command arguments. This is intentional: an interpreted ROS 2 Python node may expose Python as the executable while its installed node path remains in `cmdline`.
 
-Examples:
-
-- `fast_livo --ros-args` under a concrete service remains direct `ROS2` because `--ros-args` is strong provenance.
-- Generic `python3` with both ROS environment variables can still classify directly as `ROS2` with 60 accumulated points when no stronger competing category exists.
-- `code` with the same inherited environment remains direct `DEV` because DEV has 70 points versus weak ROS2's 60.
-- `firefox` with the same inherited environment remains direct `BROWSER` because BROWSER has 80 points versus weak ROS2's 60.
-
 ### Container
 
-A cgroup path matching any of these markers contributes **+90**:
-
-```text
-/docker/
-docker-
-containerd
-kubepods
-libpod-
-```
-
-This covers common Docker/containerd/Kubernetes/Podman cgroup layouts without invoking their command-line tools.
+A cgroup path matching `/docker/`, `docker-`, `containerd`, `kubepods`, or `libpod-` contributes **+90**.
 
 ### systemd
 
-A **concrete** cgroup `*.service` unit contributes **+80**.
-
-The per-user manager unit is explicitly ignored as SYSTEMD evidence:
-
-```text
-user@<numeric-uid>.service
-```
-
-This distinction matters on desktop Linux. Firefox, Code, terminals, and other user applications commonly inherit a path containing `user@1000.service`; that ancestry alone does not make them systemd services.
-
-Concrete units such as these still qualify:
-
-```text
-todeskd.service
-docker.service
-camera-daemon.service
-org.gnome.Shell@x11.service
-```
-
-A real GNOME user service can therefore correctly remain SYSTEMD. v0.2.1 does not force every desktop process to PROCESS.
+A concrete cgroup `*.service` unit contributes **+80**. The per-user manager `user@<numeric-uid>.service` is ignored as SYSTEMD evidence so desktop applications do not all become SYSTEMD. Concrete units such as `todeskd.service` and `org.gnome.Shell@x11.service` can correctly remain SYSTEMD.
 
 ### Development tools
 
-Known development/build executable names contribute **+70**. v0.2.1 includes:
-
-```text
-code
-code-insiders
-clangd
-rustc
-cargo
-cmake
-ninja
-make
-colcon
-gcc
-g++
-clang
-clang++
-cc1
-cc1plus
-rust-analyzer
-pyright-langserver
-pylsp
-```
+Known development/build executable names contribute **+70**. This includes Code, clangd, Rust/Cargo tools, C/C++ build tools, colcon, rust-analyzer, pyright-langserver, and pylsp.
 
 ### Browsers
 
-Process names containing one of the following contribute **+80**:
+Process names containing Firefox/Chrome/Chromium/Brave markers contribute **+80**.
 
-```text
-firefox
-chrome
-chromium
-brave
-```
+### Generic processes and confidence
 
-A browser under `user@<uid>.service` therefore remains direct `BROWSER` unless it has stronger competing provenance.
-
-### Generic processes
-
-A PID with no recognized category-specific evidence is direct `PROCESS`. Generic desktop applications do not inherit a SYSTEMD label solely from the user service manager.
-
-### Confidence
-
-Direct-classification confidence is derived from the selected category's accumulated score:
+A PID with no recognized category-specific evidence is direct `PROCESS`. Direct-classification confidence is derived from the winning category score:
 
 ```text
 high    >= 100
@@ -130,40 +60,15 @@ medium  60..99
 low     < 60
 ```
 
-A direct generic `PROCESS` has no category-specific evidence and therefore low confidence by definition.
-
 ## Display provenance
-
-v0.2.1 adds a separate deterministic ownership resolver for the process table, CLI snapshot, filters, and search.
 
 Display provenance never mutates the current PID's direct `Classification` or evidence.
 
-### Inheritance eligibility
+Only a PID whose direct classification is `PROCESS` may inherit a display category. For such a PID, proc-lens walks the already-collected `parent_chain` from direct parent outward; the nearest direct `BROWSER` or `DEV` ancestor wins.
 
-Only a PID whose direct classification is `PROCESS` may inherit a display category.
+Direct ROS2, CONTAINER, SYSTEMD, DEV, and BROWSER categories are protected and are never overwritten by an ancestor.
 
-Direct categories are protected:
-
-```text
-ROS2
-CONTAINER
-SYSTEMD
-DEV
-BROWSER
-```
-
-Those categories keep their direct type even if a Browser or DEV ancestor exists.
-
-### Nearest meaningful ancestor
-
-For a direct PROCESS PID, walk the already-collected `parent_chain` from direct parent outward. The first ancestor whose **direct** type is one of these wins:
-
-```text
-BROWSER
-DEV
-```
-
-Examples:
+Example:
 
 ```text
 firefox [direct BROWSER]
@@ -171,15 +76,7 @@ firefox [direct BROWSER]
     -> display BROWSER, owner firefox, PROJECT Firefox
 ```
 
-```text
-firefox [direct BROWSER]
-└── code [direct DEV]
-    └── utility-process [direct PROCESS]
-        -> nearest meaningful owner is code
-        -> display DEV
-```
-
-The actual child PID/name/COMMAND remains visible. proc-lens does not merge process rows into one application row in v0.2.1.
+The child PID/name/COMMAND remains visible; proc-lens does not merge process rows.
 
 ### Browser-family PROJECT labels
 
@@ -192,11 +89,9 @@ chromium             -> Chromium
 brave                -> Brave
 ```
 
-This is an ownership label, not a filesystem project.
+### DEV project inference and v0.2.2 family fallback
 
-### DEV project inference
-
-For a direct or inherited DEV display row, project discovery checks cwd candidates in this order:
+For a direct or inherited DEV display row, project discovery first checks cwd candidates in this order:
 
 ```text
 current PID cwd
@@ -205,13 +100,26 @@ parent_chain[1] cwd
 ...
 ```
 
-For each cwd candidate, proc-lens walks at most 8 filesystem parents and selects the first directory containing `.git`. The directory basename becomes PROJECT.
+For each candidate, proc-lens walks at most 8 filesystem parents and selects the first directory containing `.git`. The directory basename becomes PROJECT. No `git` subprocess is spawned.
 
-No `git` subprocess is spawned.
+If no Git root is available, v0.2.2 applies a deliberately small application-family fallback:
 
-This allows a generic Code/Electron utility process whose own cwd is unrelated to still inherit a repository name from a meaningful ancestor when that ancestor is running inside the project.
+```text
+code / code-insiders        -> VS Code
+rust-analyzer               -> Rust
+clangd                      -> Clang
+pyright-langserver / pylsp  -> Python
+```
 
-If no Git root is found, PROJECT remains `-`.
+This fallback describes the **known development application/tool family**, not a repository. It exists specifically for cases such as VS Code GPU/zygote/utility processes whose cwd and ancestor cwd values do not identify one workspace and may in fact serve multiple windows.
+
+The precedence is strict:
+
+```text
+verified Git root > approved DEV family > -
+```
+
+Therefore a `clangd` running inside `agt_navigation_v2` displays `agt_navigation_v2`, not `Clang`. A `code --type=gpu-process` with no Git evidence displays `VS Code`, not an arbitrarily guessed workspace. Unknown DEV tools with no Git evidence remain `-`.
 
 ## User-facing PROJECT precedence
 
@@ -220,41 +128,25 @@ After display provenance is resolved, PROJECT follows these semantics:
 ```text
 ROS2      -> ROS2 workspace name
 BROWSER   -> normalized browser family
-DEV       -> nearest Git root from current/ancestor cwd chain
+DEV       -> nearest Git root; otherwise approved DEV family; otherwise -
 CONTAINER -> container
 SYSTEMD   -> concrete service unit
 PROCESS   -> -
 ```
 
-The TUI limits the fixed-width PROJECT cell to 24 visible characters and uses Unicode `…` instead of hard clipping. Full values remain available in contexts that are not constrained to the table width.
+The TUI limits fixed-width PROJECT cells to 24 visible characters and uses Unicode `…` instead of hard clipping. Full values remain available where width permits.
 
-## Filtering and search
+## Filtering, search, and inspect
 
-The interactive TUI and CLI `snapshot --type ...` filter on the **display provenance type**, not only the direct classifier type.
+The TUI and CLI snapshot filters use the **display provenance type**, so a direct PROCESS child owned by Firefox appears under a Browser filter. Search matches raw process name, raw command line, resolved display type, and resolved PROJECT label.
 
-Therefore a direct PROCESS child owned by Firefox appears under a Browser filter.
-
-TUI search matches:
-
-- raw process name
-- raw command line
-- resolved display type
-- resolved PROJECT label
-
-This makes searches such as `Firefox` useful even for child PIDs named `Isolated Web Co`.
-
-## Inspect semantics
-
-`proc-lens inspect <pid>` deliberately keeps the current PID's direct facts visible:
+`proc-lens inspect <pid>` keeps current-PID facts explicit. A browser child can therefore show:
 
 ```text
 Type       : PROCESS
 Confidence : low
-```
+Project    : Firefox
 
-When ownership is inherited it adds a separate block:
-
-```text
 Provenance
 Owner PID   : 7326
 Owner       : firefox
@@ -262,8 +154,8 @@ Display type: BROWSER
 Project     : Firefox
 ```
 
-Executable, cwd, full command, cgroup, parent chain, ROS2 identity, and direct classification evidence remain raw/current-PID information.
+For a direct DEV process such as a VS Code GPU process, `Type : DEV` remains direct and `Project : VS Code` is the conservative family fallback; no inherited `Provenance` block is necessary unless ownership itself came from an ancestor.
 
 ## Deliberate limitations
 
-v0.2.1 does not query the ROS graph, Docker daemon, systemd D-Bus, browser APIs, VS Code APIs, or an LLM. It does not collapse process families into one row. Parent-chain attribution remains deterministic and kernel-visible, which keeps the feature lightweight and explainable.
+v0.2.2 does not query the ROS graph, Docker daemon, systemd D-Bus, browser APIs, VS Code APIs/workspace databases, or an LLM. It does not collapse process families into one row. Parent-chain attribution and DEV fallback remain deterministic and lightweight, and proc-lens prefers `-` over inventing a project that cannot be supported by available evidence.
