@@ -9,6 +9,17 @@ pub fn is_container_cgroup(path: &str) -> bool {
 }
 
 #[must_use]
+pub fn systemd_service_unit(path: &str) -> Option<&str> {
+    path.split('/').find(|part| {
+        part.ends_with(".service")
+            && !part
+                .strip_prefix("user@")
+                .and_then(|value| value.strip_suffix(".service"))
+                .is_some_and(|uid| !uid.is_empty() && uid.bytes().all(|byte| byte.is_ascii_digit()))
+    })
+}
+
+#[must_use]
 pub fn known_development_executable(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
