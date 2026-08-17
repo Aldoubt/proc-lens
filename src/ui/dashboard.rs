@@ -3,9 +3,9 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Gauge, Paragraph, Row, Table, TableState, Wrap};
 
-use crate::app::{SortMode, UiState, ViewMode, format_bytes, project_label};
+use crate::app::{SortMode, UiState, ViewMode, format_bytes};
 
-use super::model::{PresentationModel, compact_command_label};
+use super::model::{PresentationModel, compact_command_label, truncate_label};
 
 const HELP_TEXT: &str = "↑ / k        previous process\n\
 ↓ / j        next process\n\
@@ -131,8 +131,8 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
         };
         Row::new(vec![
             process.snapshot.pid.to_string(),
-            process.classification.process_type.to_string(),
-            project_label(process),
+            row.provenance.process_type.to_string(),
+            truncate_label(&row.provenance.project_label, 24),
             format!("{:.1}", row.cpu_percent),
             format_bytes(process.snapshot.memory_bytes),
             process
