@@ -7,7 +7,7 @@ use std::str::FromStr;
 use crate::process::ProcessSnapshot;
 use crate::process::resolver::resolve_ros2_process;
 
-pub use rules::known_development_executable;
+pub use rules::{known_development_executable, systemd_service_unit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ProcessType {
@@ -165,12 +165,16 @@ pub fn classify(process: &ProcessSnapshot, ancestors: &[ProcessSnapshot]) -> Cla
         );
     }
 
-    if process.cgroup.iter().any(|path| path.contains(".service")) {
+    if process
+        .cgroup
+        .iter()
+        .any(|path| rules::systemd_service_unit(path).is_some())
+    {
         push(
             &mut evidence,
             ProcessType::Systemd,
             80,
-            "cgroup contains a systemd .service unit",
+            "cgroup contains a concrete systemd .service unit",
         );
     }
 
@@ -249,14 +253,8 @@ fn winning_type(scores: &BTreeMap<ProcessType, i32>) -> ProcessType {
         ProcessType::Browser,
     ];
 
-    let mut best = ProcessType::Generic;
-    let mut best_score = 0;
-    for process_type in PRIORITY {
-        let score = scores.get(&process_type).copied().unwrap_or(0);
-        if score > best_score {
-            best = process_type;
-            best_score = score;
-        }
-    }
-    best
+    PRIORITY
+        .into_iter()
+        .find(|process_type| scores.get(process_type).is_some_and(|score| *score > 0))
+        .unwrap_or(ProcessType::Generic)
 }
