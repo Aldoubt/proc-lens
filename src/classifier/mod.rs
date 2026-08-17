@@ -203,12 +203,16 @@ pub fn classify(process: &ProcessSnapshot, ancestors: &[ProcessSnapshot]) -> Cla
         );
     }
 
+    let strong_ros2 = evidence
+        .iter()
+        .any(|item| item.process_type == ProcessType::Ros2 && item.score >= 50);
+
     let mut scores: BTreeMap<ProcessType, i32> = BTreeMap::new();
     for item in &evidence {
         *scores.entry(item.process_type).or_default() += item.score;
     }
 
-    let process_type = winning_type(&scores);
+    let process_type = winning_type(&scores, strong_ros2);
     let score = scores.get(&process_type).copied().unwrap_or(0);
     let confidence = match score {
         100.. => Confidence::High,
@@ -244,7 +248,11 @@ fn is_ros2_launcher(process: &ProcessSnapshot) -> bool {
     joined.contains("ros2 launch") || joined.contains("ros2 run")
 }
 
-fn winning_type(scores: &BTreeMap<ProcessType, i32>) -> ProcessType {
+fn winning_type(scores: &BTreeMap<ProcessType, i32>, strong_ros2: bool) -> ProcessType {
+    if strong_ros2 {
+        return ProcessType::Ros2;
+    }
+
     const PRIORITY: [ProcessType; 5] = [
         ProcessType::Ros2,
         ProcessType::Container,
@@ -253,8 +261,14 @@ fn winning_type(scores: &BTreeMap<ProcessType, i32>) -> ProcessType {
         ProcessType::Browser,
     ];
 
-    PRIORITY
-        .into_iter()
-        .find(|process_type| scores.get(process_type).is_some_and(|score| *score > 0))
-        .unwrap_or(ProcessType::Generic)
+    let mut best = ProcessType::Generic;
+    let mut best_score = 0;
+    for process_type in PRIORITY {
+        let score = scores.get(&process_type).copied().unwrap_or(0);
+        if score > best_score {
+            best = process_type;
+            best_score = score;
+        }
+    }
+    best
 }
