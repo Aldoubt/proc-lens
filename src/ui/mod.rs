@@ -163,4 +163,49 @@ mod tests {
         );
         assert_eq!(next_poll_timeout(Duration::from_secs(1)), Duration::ZERO);
     }
+
+    #[test]
+    fn paused_automatic_tick_does_nothing() {
+        assert_eq!(
+            automatic_action(true, Duration::from_secs(10), Duration::from_secs(10)),
+            TickAction::None
+        );
+    }
+
+    #[test]
+    fn automatic_tick_separates_sampling_and_reordering() {
+        assert_eq!(
+            automatic_action(false, Duration::from_secs(1), Duration::from_secs(1)),
+            TickAction::Sample
+        );
+        assert_eq!(
+            automatic_action(false, Duration::from_millis(500), Duration::from_secs(2)),
+            TickAction::Reorder
+        );
+        assert_eq!(
+            automatic_action(false, Duration::from_secs(1), Duration::from_secs(2)),
+            TickAction::SampleAndReorder
+        );
+    }
+
+    #[test]
+    fn pause_transition_requests_refresh_only_on_resume() {
+        let mut state = UiState::default();
+
+        assert_eq!(toggle_pause(&mut state), InputAction::None);
+        assert!(state.paused);
+
+        assert_eq!(toggle_pause(&mut state), InputAction::ResumeRefresh);
+        assert!(!state.paused);
+    }
+
+    #[test]
+    fn manual_refresh_is_only_requested_while_paused() {
+        let mut state = UiState::default();
+        assert_eq!(manual_refresh_action(&state), InputAction::None);
+
+        state.paused = true;
+        assert_eq!(manual_refresh_action(&state), InputAction::RefreshNow);
+        assert!(state.paused);
+    }
 }
