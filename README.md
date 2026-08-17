@@ -7,7 +7,7 @@
 `proc-lens` 是一个轻量级 Linux 进程检查工具，重点回答：**这个进程是什么、由谁启动、属于哪个应用/项目，以及正在消耗多少资源**。
 
 <p align="center">
-  <img src="docs/assets/proc-lens-v0.2.2-tui.png" alt="proc-lens v0.2.2 TUI" width="900">
+  <img src="docs/assets/proc-lens-v0.2.2-tui.png" alt="proc-lens TUI" width="900">
 </p>
 
 > Screenshot captured from a real Ubuntu workstation. Values are machine/runtime dependent.  
