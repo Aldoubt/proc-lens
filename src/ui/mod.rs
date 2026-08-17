@@ -23,7 +23,7 @@ pub fn run(initial_type_filter: Option<ProcessType>) -> io::Result<()> {
     };
     let mut last_refresh = Instant::now();
 
-    ratatui::run(|mut terminal| {
+    ratatui::run(|terminal| {
         let mut dirty = true;
         loop {
             if dirty {
