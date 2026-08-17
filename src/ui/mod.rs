@@ -11,8 +11,25 @@ use crate::app::{Inspector, SortMode, UiState, ViewMode};
 use crate::classifier::ProcessType;
 use model::PresentationModel;
 
-const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+const SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
+const REORDER_INTERVAL: Duration = Duration::from_secs(2);
 const EVENT_POLL: Duration = Duration::from_millis(100);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TickAction {
+    None,
+    Sample,
+    Reorder,
+    SampleAndReorder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputAction {
+    None,
+    Quit,
+    RefreshNow,
+    ResumeRefresh,
+}
 
 pub fn run(initial_type_filter: Option<ProcessType>) -> io::Result<()> {
     let mut inspector = Inspector::default();
@@ -24,7 +41,8 @@ pub fn run(initial_type_filter: Option<ProcessType>) -> io::Result<()> {
         ..UiState::default()
     };
     let mut model = PresentationModel::new(snapshot, &mut state);
-    let mut last_refresh = Instant::now();
+    let mut last_sample = Instant::now();
+    let mut last_reorder = Instant::now();
 
     ratatui::run(|terminal| {
         let mut dirty = true;
@@ -34,12 +52,25 @@ pub fn run(initial_type_filter: Option<ProcessType>) -> io::Result<()> {
                 dirty = false;
             }
 
-            let timeout = next_poll_timeout(last_refresh.elapsed());
+            let timeout = if state.paused {
+                EVENT_POLL
+            } else {
+                next_poll_timeout(last_sample.elapsed())
+            };
             if event::poll(timeout)? {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        if handle_key(&mut state, &mut model, key) {
-                            break Ok(());
+                        let action = handle_key(&mut state, &mut model, key, terminal_page_size());
+                        match action {
+                            InputAction::Quit => break Ok(()),
+                            InputAction::RefreshNow | InputAction::ResumeRefresh => {
+                                if let Ok(next) = inspector.refresh() {
+                                    model.integrate_snapshot(next, &mut state, true);
+                                }
+                                last_sample = Instant::now();
+                                last_reorder = last_sample;
+                            }
+                            InputAction::None => {}
                         }
                         dirty = true;
                     }
@@ -48,22 +79,89 @@ pub fn run(initial_type_filter: Option<ProcessType>) -> io::Result<()> {
                 }
             }
 
-            if last_refresh.elapsed() >= REFRESH_INTERVAL {
-                if let Ok(next) = inspector.refresh() {
-                    model.integrate_snapshot(next, &mut state, true);
+            match automatic_action(state.paused, last_sample.elapsed(), last_reorder.elapsed()) {
+                TickAction::None => {}
+                TickAction::Sample => {
+                    if let Ok(next) = inspector.refresh() {
+                        model.integrate_snapshot(next, &mut state, false);
+                        dirty = true;
+                    }
+                    last_sample = Instant::now();
                 }
-                last_refresh = Instant::now();
-                dirty = true;
+                TickAction::Reorder => {
+                    model.reorder(&mut state);
+                    last_reorder = Instant::now();
+                    dirty = true;
+                }
+                TickAction::SampleAndReorder => {
+                    if let Ok(next) = inspector.refresh() {
+                        model.integrate_snapshot(next, &mut state, true);
+                    } else {
+                        model.reorder(&mut state);
+                    }
+                    let now = Instant::now();
+                    last_sample = now;
+                    last_reorder = now;
+                    dirty = true;
+                }
             }
         }
     })
 }
 
 fn next_poll_timeout(elapsed: Duration) -> Duration {
-    REFRESH_INTERVAL.saturating_sub(elapsed).min(EVENT_POLL)
+    SAMPLE_INTERVAL.saturating_sub(elapsed).min(EVENT_POLL)
 }
 
-fn handle_key(state: &mut UiState, model: &mut PresentationModel, key: KeyEvent) -> bool {
+fn automatic_action(
+    paused: bool,
+    sample_elapsed: Duration,
+    reorder_elapsed: Duration,
+) -> TickAction {
+    if paused {
+        return TickAction::None;
+    }
+
+    match (
+        sample_elapsed >= SAMPLE_INTERVAL,
+        reorder_elapsed >= REORDER_INTERVAL,
+    ) {
+        (true, true) => TickAction::SampleAndReorder,
+        (true, false) => TickAction::Sample,
+        (false, true) => TickAction::Reorder,
+        (false, false) => TickAction::None,
+    }
+}
+
+fn toggle_pause(state: &mut UiState) -> InputAction {
+    state.paused = !state.paused;
+    if state.paused {
+        InputAction::None
+    } else {
+        InputAction::ResumeRefresh
+    }
+}
+
+fn manual_refresh_action(state: &UiState) -> InputAction {
+    if state.paused {
+        InputAction::RefreshNow
+    } else {
+        InputAction::None
+    }
+}
+
+fn terminal_page_size() -> usize {
+    crossterm::terminal::size()
+        .map(|(_, rows)| usize::from(rows.saturating_sub(6)).max(1))
+        .unwrap_or(10)
+}
+
+fn handle_key(
+    state: &mut UiState,
+    model: &mut PresentationModel,
+    key: KeyEvent,
+    page_size: usize,
+) -> InputAction {
     if state.search_active {
         match key.code {
             KeyCode::Esc | KeyCode::Enter => state.search_active = false,
@@ -77,16 +175,23 @@ fn handle_key(state: &mut UiState, model: &mut PresentationModel, key: KeyEvent)
             }
             _ => {}
         }
-        return false;
+        return InputAction::None;
+    }
+
+    if state.help_open {
+        if matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')) {
+            state.help_open = false;
+        }
+        return InputAction::None;
     }
 
     match key.code {
         KeyCode::Char('q') => {
             if state.view == ViewMode::Detail {
                 state.back();
-                false
+                InputAction::None
             } else {
-                true
+                InputAction::Quit
             }
         }
         KeyCode::Esc => {
@@ -96,54 +201,76 @@ fn handle_key(state: &mut UiState, model: &mut PresentationModel, key: KeyEvent)
                 state.query.clear();
                 model.reorder(state);
             }
-            false
+            InputAction::None
         }
-        KeyCode::Down | KeyCode::Char('j') => {
+        KeyCode::Char(' ') => toggle_pause(state),
+        KeyCode::Char('r') => manual_refresh_action(state),
+        KeyCode::Char('?') => {
+            state.help_open = true;
+            InputAction::None
+        }
+        KeyCode::Down | KeyCode::Char('j') if state.view == ViewMode::List => {
             model.move_selection(state, 1);
-            false
+            InputAction::None
         }
-        KeyCode::Up | KeyCode::Char('k') => {
+        KeyCode::Up | KeyCode::Char('k') if state.view == ViewMode::List => {
             model.move_selection(state, -1);
-            false
+            InputAction::None
+        }
+        KeyCode::PageDown if state.view == ViewMode::List => {
+            model.move_page(state, page_size, 1);
+            InputAction::None
+        }
+        KeyCode::PageUp if state.view == ViewMode::List => {
+            model.move_page(state, page_size, -1);
+            InputAction::None
+        }
+        KeyCode::Home if state.view == ViewMode::List => {
+            model.select_first(state);
+            InputAction::None
+        }
+        KeyCode::End if state.view == ViewMode::List => {
+            model.select_last(state);
+            InputAction::None
         }
         KeyCode::Enter => {
             state.open_detail();
-            false
+            InputAction::None
         }
         KeyCode::Char('/') if state.view == ViewMode::List => {
             state.search_active = true;
-            false
+            InputAction::None
         }
         KeyCode::Char('t') if state.view == ViewMode::List => {
             state.tree_mode = !state.tree_mode;
             model.reorder(state);
-            false
+            InputAction::None
         }
         KeyCode::Char('c') if state.view == ViewMode::List => {
             state.sort = SortMode::Cpu;
             state.tree_mode = false;
             model.reorder(state);
-            false
+            InputAction::None
         }
         KeyCode::Char('m') if state.view == ViewMode::List => {
             state.sort = SortMode::Memory;
             state.tree_mode = false;
             model.reorder(state);
-            false
+            InputAction::None
         }
         KeyCode::Char('g') if state.view == ViewMode::List => {
             state.sort = SortMode::Gpu;
             state.tree_mode = false;
             model.reorder(state);
-            false
+            InputAction::None
         }
         KeyCode::Char('p') if state.view == ViewMode::List => {
             state.sort = SortMode::Pid;
             state.tree_mode = false;
             model.reorder(state);
-            false
+            InputAction::None
         }
-        _ => false,
+        _ => InputAction::None,
     }
 }
 
