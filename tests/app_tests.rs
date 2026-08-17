@@ -66,6 +66,62 @@ fn snapshot() -> AppSnapshot {
     }
 }
 
+fn browser_child_snapshot() -> AppSnapshot {
+    let mut parent = enriched();
+    parent.snapshot.identity = ProcessIdentity {
+        pid: 100,
+        start_time_ticks: 1000,
+    };
+    parent.snapshot.pid = 100;
+    parent.snapshot.ppid = 1;
+    parent.snapshot.name = "firefox".into();
+    parent.snapshot.executable = Some(PathBuf::from("/usr/bin/firefox"));
+    parent.snapshot.command = vec!["firefox".into()];
+    parent.snapshot.cpu_percent = 5.0;
+    parent.classification = Classification {
+        process_type: ProcessType::Browser,
+        confidence: Confidence::Medium,
+        score: 80,
+        evidence: Vec::new(),
+    };
+    parent.project = None;
+    parent.parent_chain = vec![1];
+    parent.tree_depth = 1;
+
+    let mut child = enriched();
+    child.snapshot.identity = ProcessIdentity {
+        pid: 101,
+        start_time_ticks: 1001,
+    };
+    child.snapshot.pid = 101;
+    child.snapshot.ppid = 100;
+    child.snapshot.name = "Isolated Web Co".into();
+    child.snapshot.executable = Some(PathBuf::from("/usr/lib/firefox/firefox"));
+    child.snapshot.command = vec!["Isolated Web Co".into()];
+    child.snapshot.cpu_percent = 12.0;
+    child.classification = Classification {
+        process_type: ProcessType::Generic,
+        confidence: Confidence::Low,
+        score: 0,
+        evidence: Vec::new(),
+    };
+    child.project = None;
+    child.parent_chain = vec![100, 1];
+    child.tree_depth = 2;
+    child.tree_order = 1;
+
+    AppSnapshot {
+        cpu_percent: 20.0,
+        memory: MemorySnapshot {
+            total_bytes: 32 * 1024 * 1024 * 1024,
+            available_bytes: 20 * 1024 * 1024 * 1024,
+        },
+        load_average: [1.0, 0.8, 0.6],
+        gpu: None,
+        processes: vec![parent, child],
+    }
+}
+
 #[test]
 fn cli_snapshot_contains_process_identity_and_resources() {
     let output = format_snapshot(&snapshot(), None);
@@ -86,6 +142,17 @@ fn cli_snapshot_filters_by_process_type() {
 }
 
 #[test]
+fn cli_snapshot_uses_inherited_browser_provenance() {
+    let snapshot = browser_child_snapshot();
+    let output = format_snapshot(&snapshot, Some(ProcessType::Browser));
+
+    assert!(output.contains("101"));
+    assert!(output.contains("BROWSER"));
+    assert!(output.contains("Firefox"));
+    assert!(output.contains("Isolated Web Co"));
+}
+
+#[test]
 fn cli_inspect_explains_provenance_and_evidence() {
     let output = format_inspect(&snapshot(), 18452).expect("pid exists");
 
@@ -95,6 +162,19 @@ fn cli_inspect_explains_provenance_and_evidence() {
     assert!(output.contains("Parent chain"));
     assert!(output.contains("100 -> 1"));
     assert!(output.contains("command contains --ros-args"));
+}
+
+#[test]
+fn cli_inspect_separates_direct_type_from_inherited_provenance() {
+    let snapshot = browser_child_snapshot();
+    let output = format_inspect(&snapshot, 101).expect("pid exists");
+
+    assert!(output.contains("Type       : PROCESS"));
+    assert!(output.contains("Provenance"));
+    assert!(output.contains("Owner PID   : 100"));
+    assert!(output.contains("Owner       : firefox"));
+    assert!(output.contains("Display type: BROWSER"));
+    assert!(output.contains("Project     : Firefox"));
 }
 
 #[test]
