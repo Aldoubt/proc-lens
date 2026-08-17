@@ -2,26 +2,35 @@
 
 The classifier is deterministic. Every matched rule produces an `Evidence` record containing a category, score, and human-readable reason.
 
-v0.2 applies category precedence whenever more than one category has positive evidence:
+Scores are summed per category. The highest accumulated score normally wins, and ties use this precedence:
 
 ```text
 ROS2 > CONTAINER > SYSTEMD > DEV > BROWSER > PROCESS
 ```
 
-Scores are still summed inside each category and are used for the selected category's confidence. They are not used to let a lower-priority category override a higher-priority category. For example, valid ROS 2 evidence remains ROS2 even when the process also runs under a concrete systemd service.
+ROS 2 has one additional provenance rule: if any **strong ROS2 evidence** is present, ROS2 wins even when another category has a slightly higher accumulated score. Strong evidence is one of the +50-or-higher ROS2 rules below: an installed ROS2 executable path, `--ros-args`, a current `ros2 launch/run`, or an ancestor `ros2 launch/run`.
+
+The environment-only rules (`ROS_VERSION=2` and `AMENT_PREFIX_PATH`) are intentionally **weak**. They remain score-based because Code, Firefox, terminals, and other applications can inherit these variables when launched from a shell that sourced a ROS workspace. Weak inherited environment alone therefore does not relabel a stronger `DEV` or `BROWSER` process as ROS2.
 
 ## ROS 2
 
-| Evidence | Score |
-| --- | ---: |
-| Resolvable `install/<package>/lib/<package>/<executable>` path in executable or command | +80 |
-| Command contains `--ros-args` | +70 |
-| Current command is `ros2 launch` or `ros2 run` | +60 |
-| Ancestor command is `ros2 launch` or `ros2 run` | +50 |
-| Selected environment contains `ROS_VERSION=2` | +40 |
-| Selected environment contains `AMENT_PREFIX_PATH` | +20 |
+| Evidence | Score | Strength |
+| --- | ---: | --- |
+| Resolvable `install/<package>/lib/<package>/<executable>` path in executable or command | +80 | strong |
+| Command contains `--ros-args` | +70 | strong |
+| Current command is `ros2 launch` or `ros2 run` | +60 | strong |
+| Ancestor command is `ros2 launch` or `ros2 run` | +50 | strong |
+| Selected environment contains `ROS_VERSION=2` | +40 | weak |
+| Selected environment contains `AMENT_PREFIX_PATH` | +20 | weak |
 
 The project resolver checks both `/proc/<pid>/exe` and command arguments. This is intentional: an interpreted ROS 2 Python node may expose Python as the executable while its installed node path remains in `cmdline`.
+
+Examples:
+
+- `fast_livo --ros-args` under a concrete service remains `ROS2` because `--ros-args` is strong provenance.
+- Generic `python3` with both ROS environment variables can still classify as `ROS2` with 60 accumulated points when no stronger competing category exists.
+- `code` with the same inherited environment remains `DEV` because DEV has 70 points versus weak ROS2's 60.
+- `firefox` with the same inherited environment remains `BROWSER` because BROWSER has 80 points versus weak ROS2's 60.
 
 ## Container
 
@@ -97,7 +106,7 @@ chromium
 brave
 ```
 
-A browser under `user@<uid>.service` therefore remains `BROWSER` unless it has evidence for a higher-priority category.
+A browser under `user@<uid>.service` therefore remains `BROWSER` unless it has stronger competing provenance.
 
 ## Generic processes
 
