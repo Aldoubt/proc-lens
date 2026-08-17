@@ -126,9 +126,9 @@ fn ros2_launch_command_is_classified_even_without_ros_args() {
 #[test]
 fn user_manager_service_does_not_make_firefox_systemd() {
     let mut process = fixture("firefox");
-    process.cgroup.push(
-        "/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox.scope".into(),
-    );
+    process
+        .cgroup
+        .push("/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox.scope".into());
 
     assert_eq!(classify(&process, &[]).process_type, ProcessType::Browser);
 }
@@ -136,9 +136,9 @@ fn user_manager_service_does_not_make_firefox_systemd() {
 #[test]
 fn user_manager_service_does_not_make_code_systemd() {
     let mut process = fixture("code");
-    process.cgroup.push(
-        "/user.slice/user-1000.slice/user@1000.service/app.slice/app-code.scope".into(),
-    );
+    process
+        .cgroup
+        .push("/user.slice/user-1000.slice/user@1000.service/app.slice/app-code.scope".into());
 
     assert_eq!(
         classify(&process, &[]).process_type,
