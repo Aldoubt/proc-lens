@@ -1,11 +1,12 @@
 [package]
 name = "proc-lens"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 rust-version = "1.88"
 description = "A lightweight Linux process inspector focused on provenance and project-aware classification"
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/Aldoubt/proc-lens"
 keywords = ["linux", "process", "monitor", "ros2", "tui"]
 categories = ["command-line-utilities"]
 
@@ -18,3 +19,20 @@ clap = { version = "4.6.4", features = ["derive"] }
 crossterm = "0.29.0"
 ratatui = "0.30.2"
 nvml-wrapper = { version = "0.12.1", optional = true }
+
+[package.metadata.deb]
+maintainer = "Xuan Yang <xuanyang.robotics@gmail.com>"
+copyright = "2026, Xuan Yang"
+license-file = ["LICENSE", "0"]
+section = "utils"
+priority = "optional"
+depends = "$auto"
+extended-description = "proc-lens is a lightweight Linux process inspector focused on process provenance, project-aware classification, ROS 2 development workflows, and CPU/RAM/GPU resource inspection."
+assets = [
+    ["target/release/proc-lens", "usr/bin/", "755"],
+    ["packaging/proc-lens.desktop", "usr/share/applications/proc-lens.desktop", "644"],
+    ["packaging/icons/proc-lens.svg", "usr/share/icons/hicolor/scalable/apps/proc-lens.svg", "644"],
+    ["packaging/icons/proc-lens.png", "usr/share/icons/hicolor/256x256/apps/proc-lens.png", "644"],
+    ["README.md", "usr/share/doc/proc-lens/README.md", "644"],
+    ["LICENSE", "usr/share/doc/proc-lens/LICENSE", "644"],
+]
