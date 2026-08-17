@@ -122,3 +122,43 @@ fn ros2_launch_command_is_classified_even_without_ros_args() {
             .any(|evidence| evidence.message.contains("ros2 launch/run"))
     );
 }
+
+#[test]
+fn user_manager_service_does_not_make_firefox_systemd() {
+    let mut process = fixture("firefox");
+    process.cgroup.push(
+        "/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox.scope".into(),
+    );
+
+    assert_eq!(classify(&process, &[]).process_type, ProcessType::Browser);
+}
+
+#[test]
+fn user_manager_service_does_not_make_code_systemd() {
+    let mut process = fixture("code");
+    process.cgroup.push(
+        "/user.slice/user-1000.slice/user@1000.service/app.slice/app-code.scope".into(),
+    );
+
+    assert_eq!(
+        classify(&process, &[]).process_type,
+        ProcessType::Development
+    );
+}
+
+#[test]
+fn concrete_service_still_classifies_as_systemd() {
+    let mut process = fixture("ToDesk_Service");
+    process.cgroup.push("/system.slice/todeskd.service".into());
+
+    assert_eq!(classify(&process, &[]).process_type, ProcessType::Systemd);
+}
+
+#[test]
+fn ros2_still_beats_concrete_systemd_context() {
+    let mut process = fixture("fast_livo");
+    process.command.push("--ros-args".into());
+    process.cgroup.push("/system.slice/robot.service".into());
+
+    assert_eq!(classify(&process, &[]).process_type, ProcessType::Ros2);
+}
