@@ -4,20 +4,21 @@
 
 > **What is this process, who launched it, which application/project does it belong to, and what is it costing?**
 
-It combines low-overhead `/proc` sampling with deterministic, explainable direct classification plus derived parent-chain provenance. v0.2.1 targets stable interactive use in Ubuntu/Linux robotics development environments with ROS 2, Docker/systemd, development tools, browsers, and optional NVIDIA GPU monitoring.
+It combines low-overhead `/proc` sampling with deterministic, explainable direct classification plus derived parent-chain provenance. v0.2.2 targets stable interactive use in Ubuntu/Linux robotics development environments with ROS 2, Docker/systemd, development tools, browsers, and optional NVIDIA GPU monitoring.
 
 ## What it shows
 
 The layout and values below are illustrative; actual values come from the local Linux system at runtime.
 
 ```text
-proc-lens 0.2.1      load 1.42 1.17 0.93      processes 241      mode cpu
+proc-lens 0.2.2      load 1.42 1.17 0.93      processes 241      mode cpu
 
 CPU  [████████░░] 78.0%   RAM [██████░░░░] 12.1G / 31.3G   GPU0 [█████░░░░░] 51.0%
 
 PID     TYPE       PROJECT                  CPU%       RAM    GPU%       VRAM  COMMAND
 18452   ROS2       agt_navigation_runtime    83.4      1.21G      -     972.0M  fast_livo --ros-args
-19221   DEV        proc-lens                  8.2      2.31G      2     120.0M  code --type=utility …
+19221   DEV        proc-lens                  8.2      2.31G      2     120.0M  clangd
+7545    DEV        VS Code                   12.1      74.9M      -          -  code --type=gpu-process …
 20422   BROWSER    Firefox                   14.8      4.18G      3     180.0M  firefox
 20473   BROWSER    Firefox                    7.9      1.64G      -          -  Isolated Web Co
 2137    SYSTEMD    todeskd.service            3.5      23.3M      -          -  ToDesk_Service
@@ -58,17 +59,42 @@ firefox (BROWSER)
 └── Isolated Web Co (direct PROCESS) -> display BROWSER / Firefox
 
 code (DEV)
-└── utility-process (direct PROCESS) -> display DEV / nearest Git project
+└── utility-process (direct PROCESS) -> display DEV / project or VS Code fallback
 ```
 
 This does not merge PIDs or hide subprocesses. The COMMAND column still shows the actual process identity; ownership is communicated through TYPE, PROJECT, and the detail provenance block.
+
+## DEV family fallback in v0.2.2
+
+A development process does not always expose a repository through its cwd or parent chain. VS Code GPU/zygote/utility processes are a common example: they may be application-global and may serve multiple windows at once.
+
+v0.2.2 therefore uses a conservative three-level DEV PROJECT hierarchy:
+
+```text
+verified Git workspace
+    ↓ not available
+known development application family
+    ↓ not available
+-
+```
+
+The initial family map is deliberately small:
+
+```text
+code / code-insiders        -> VS Code
+rust-analyzer               -> Rust
+clangd                      -> Clang
+pyright-langserver / pylsp  -> Python
+```
+
+A family label is **not** a guessed repository. For example, `code --type=gpu-process` with cwd `/home/user` may show `PROJECT = VS Code`; proc-lens will not pretend it belongs to one arbitrary repository when there is no evidence for that claim. If `clangd` or `rust-analyzer` has a real Git workspace available through its cwd/provenance chain, the actual repository name always wins over `Clang` or `Rust`.
 
 ## Design principles
 
 - **Linux-native collection:** reads `/proc` directly; no `ps`, `pstree`, or `nvidia-smi` subprocesses in the sampling loop
 - **Explainable classification:** direct ROS 2/container/systemd/development/browser evidence remains deterministic and inspectable
 - **Derived provenance without extra daemons:** browser/DEV child ownership reuses the already-collected parent chain
-- **Project-aware identity:** ROS 2 resolves workspace/package identity; DEV provenance checks current cwd and ancestor cwd values for the nearest `.git` root without spawning `git`
+- **Conservative project identity:** verified Git roots beat application-family fallbacks; unresolved tools remain `-` rather than receiving a guessed project
 - **Stable selection:** selection is PID-based and reconciled after refresh/filter/reorder operations
 - **Conservative GPU reporting:** missing per-process GPU utilization is rendered as `-`, never fabricated as `0%`
 - **Graceful GPU fallback:** the rest of the application continues without NVML
@@ -143,10 +169,11 @@ The user-facing PROJECT label follows the resolved display provenance:
 
 1. ROS 2 workspace name for ROS2 processes
 2. normalized browser family (`Firefox`, `Chrome`, `Chromium`, `Brave`) for direct or inherited browser processes
-3. for direct/inherited DEV, nearest `.git` root found from current cwd and then ancestor cwd values, each walking at most 8 filesystem parents
-4. `CONTAINER` uses `container`
-5. `SYSTEMD` displays the concrete service unit
-6. unresolved generic `PROCESS` displays `-`
+3. for direct/inherited DEV, nearest `.git` root found from current cwd and ancestor cwd values, each walking at most 8 filesystem parents
+4. if no Git root is available, conservative DEV family fallback (`VS Code`, `Rust`, `Clang`, `Python`) when the executable is recognized
+5. `CONTAINER` uses `container`
+6. `SYSTEMD` displays the concrete service unit
+7. unresolved processes display `-`
 
 Fixed-width TUI PROJECT cells use a Unicode ellipsis `…` rather than hard clipping; full values remain available in detail/CLI contexts where width permits.
 
@@ -172,9 +199,9 @@ It checks formatting, Clippy, all-feature tests, CPU-only tests, and a release b
 
 Performance acceptance targets remain **<1% idle CPU** and **<50 MiB RSS** on a typical workstation. These are targets, not benchmark claims; measure them on the target machine before publishing numbers.
 
-## Scope of v0.2.1
+## Scope of v0.2.2
 
-v0.2.1 deliberately does not implement process killing/renice, mouse control, grouped/collapsed process families, historical graphs, persistent configuration, web/remote monitoring, Prometheus export, Docker lifecycle management, ROS graph/topic visualization, log analysis, LLM-based classification, or cross-platform support.
+v0.2.2 deliberately does not implement process killing/renice, mouse control, grouped/collapsed process families, historical graphs, persistent configuration, web/remote monitoring, Prometheus export, Docker lifecycle management, ROS graph/topic visualization, VS Code workspace-database inspection, log analysis, LLM-based classification, or cross-platform support.
 
 ## License
 
