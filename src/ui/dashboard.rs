@@ -19,7 +19,11 @@ pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
     ])
     .areas(frame.area());
 
-    let mode = if state.tree_mode { "tree" } else { sort_label(state.sort) };
+    let mode = if state.tree_mode {
+        "tree"
+    } else {
+        sort_label(state.sort)
+    };
     let title = Paragraph::new(format!(
         " proc-lens {}  load {:.2} {:.2} {:.2}  processes {}  mode {}",
         env!("CARGO_PKG_VERSION"),
@@ -70,7 +74,11 @@ pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
             .map(|value| format!("{value:.1}%"))
             .unwrap_or_else(|| "util -".into());
         if let (Some(used), Some(total)) = (device.memory_used_bytes, device.memory_total_bytes) {
-            label.push_str(&format!("  {} / {}", format_bytes(used), format_bytes(total)));
+            label.push_str(&format!(
+                "  {} / {}",
+                format_bytes(used),
+                format_bytes(total)
+            ));
         }
         if let Some(temp) = device.temperature_c {
             label.push_str(&format!("  {temp}C"));
@@ -121,8 +129,10 @@ pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
         ])
     });
 
-    let header = Row::new(vec!["PID", "TYPE", "PROJECT", "CPU%", "RAM", "GPU%", "VRAM", "COMMAND"])
-        .style(Style::default().add_modifier(Modifier::BOLD));
+    let header = Row::new(vec![
+        "PID", "TYPE", "PROJECT", "CPU%", "RAM", "GPU%", "VRAM", "COMMAND",
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD));
     let table = Table::new(
         rows,
         [
@@ -141,7 +151,8 @@ pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
     .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
     .highlight_symbol("> ");
 
-    let mut table_state = TableState::default().with_selected((!visible.is_empty()).then_some(state.selected));
+    let mut table_state =
+        TableState::default().with_selected((!visible.is_empty()).then_some(state.selected));
     frame.render_stateful_widget(table, table_area, &mut table_state);
 
     let footer = if state.search_active {

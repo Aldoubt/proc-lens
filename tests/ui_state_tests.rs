@@ -4,10 +4,20 @@ use proc_lens::app::{AppSnapshot, EnrichedProcess, SortMode, UiState, ViewMode};
 use proc_lens::classifier::{Classification, Confidence, ProcessType};
 use proc_lens::process::{MemorySnapshot, ProcessIdentity, ProcessSnapshot};
 
-fn process(pid: i32, name: &str, kind: ProcessType, cpu: f32, ram: u64, tree_order: usize) -> EnrichedProcess {
+fn process(
+    pid: i32,
+    name: &str,
+    kind: ProcessType,
+    cpu: f32,
+    ram: u64,
+    tree_order: usize,
+) -> EnrichedProcess {
     EnrichedProcess {
         snapshot: ProcessSnapshot {
-            identity: ProcessIdentity { pid, start_time_ticks: pid as u64 },
+            identity: ProcessIdentity {
+                pid,
+                start_time_ticks: pid as u64,
+            },
             pid,
             ppid: 1,
             name: name.into(),
@@ -36,7 +46,10 @@ fn process(pid: i32, name: &str, kind: ProcessType, cpu: f32, ram: u64, tree_ord
 fn snapshot() -> AppSnapshot {
     AppSnapshot {
         cpu_percent: 20.0,
-        memory: MemorySnapshot { total_bytes: 1000, available_bytes: 500 },
+        memory: MemorySnapshot {
+            total_bytes: 1000,
+            available_bytes: 500,
+        },
         load_average: [0.1, 0.2, 0.3],
         gpu: None,
         processes: vec![

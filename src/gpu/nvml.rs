@@ -1,10 +1,9 @@
-use std::{collections::{HashMap, HashSet}, fmt};
-
-use nvml_wrapper::{
-    enum_wrappers::device::TemperatureSensor,
-    enums::device::UsedGpuMemory,
-    Nvml,
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
 };
+
+use nvml_wrapper::{Nvml, enum_wrappers::device::TemperatureSensor, enums::device::UsedGpuMemory};
 
 use super::{GpuDeviceSnapshot, GpuProvider, GpuSample};
 use crate::process::ProcessGpuUsage;

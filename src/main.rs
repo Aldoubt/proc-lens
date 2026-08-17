@@ -33,7 +33,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Command::Inspect { pid }) => {
             let snapshot = sampled_snapshot()?;
             let output = format_inspect(&snapshot, pid).ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, format!("process {pid} is not available"))
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("process {pid} is not available"),
+                )
             })?;
             println!("{output}");
         }

@@ -15,7 +15,9 @@ pub fn parse_system_cpu_ticks(input: &str) -> Result<SystemCpuTicks, ParseError>
 
     let mut fields = aggregate.split_whitespace();
     if fields.next() != Some("cpu") {
-        return Err(ParseError::new("/proc/stat first line is not aggregate cpu"));
+        return Err(ParseError::new(
+            "/proc/stat first line is not aggregate cpu",
+        ));
     }
 
     let values: Vec<u64> = fields
@@ -35,8 +37,9 @@ pub fn parse_system_cpu_ticks(input: &str) -> Result<SystemCpuTicks, ParseError>
     let cpu_count = lines
         .filter_map(|line| line.split_whitespace().next())
         .filter(|name| {
-            name.strip_prefix("cpu")
-                .is_some_and(|suffix| !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()))
+            name.strip_prefix("cpu").is_some_and(|suffix| {
+                !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit())
+            })
         })
         .count();
 

@@ -23,7 +23,8 @@ pub fn parse_meminfo(input: &str) -> Result<MemorySnapshot, ParseError> {
         }
     }
 
-    let total_kib = total_kib.ok_or_else(|| ParseError::new("MemTotal missing from /proc/meminfo"))?;
+    let total_kib =
+        total_kib.ok_or_else(|| ParseError::new("MemTotal missing from /proc/meminfo"))?;
     let available_kib = available_kib.unwrap_or_else(|| {
         free_kib
             .unwrap_or(0)

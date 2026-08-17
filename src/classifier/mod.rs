@@ -95,8 +95,7 @@ pub struct Classification {
 pub fn classify(process: &ProcessSnapshot, ancestors: &[ProcessSnapshot]) -> Classification {
     let mut evidence = Vec::new();
 
-    if resolve_ros2_process(process).is_some()
-    {
+    if resolve_ros2_process(process).is_some() {
         push(
             &mut evidence,
             ProcessType::Ros2,
@@ -132,7 +131,11 @@ pub fn classify(process: &ProcessSnapshot, ancestors: &[ProcessSnapshot]) -> Cla
         );
     }
 
-    if process.environment.get("ROS_VERSION").is_some_and(|v| v == "2") {
+    if process
+        .environment
+        .get("ROS_VERSION")
+        .is_some_and(|v| v == "2")
+    {
         push(
             &mut evidence,
             ProcessType::Ros2,
@@ -149,7 +152,11 @@ pub fn classify(process: &ProcessSnapshot, ancestors: &[ProcessSnapshot]) -> Cla
         );
     }
 
-    if process.cgroup.iter().any(|path| rules::is_container_cgroup(path)) {
+    if process
+        .cgroup
+        .iter()
+        .any(|path| rules::is_container_cgroup(path))
+    {
         push(
             &mut evidence,
             ProcessType::Container,
@@ -220,12 +227,7 @@ pub fn classify(process: &ProcessSnapshot, ancestors: &[ProcessSnapshot]) -> Cla
     }
 }
 
-fn push(
-    evidence: &mut Vec<Evidence>,
-    process_type: ProcessType,
-    score: i32,
-    message: &str,
-) {
+fn push(evidence: &mut Vec<Evidence>, process_type: ProcessType, score: i32, message: &str) {
     evidence.push(Evidence {
         process_type,
         score,

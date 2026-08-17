@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::classifier::{Classification, ProcessType, classify};
 use crate::collector::process::ProcCollector;
-use crate::gpu::{default_provider, GpuOverview, GpuProvider, GpuSample};
+use crate::gpu::{GpuOverview, GpuProvider, GpuSample, default_provider};
 use crate::process::resolver::{ProjectIdentity, resolve_ros2_process};
 use crate::process::tree::{parent_chain, tree_order};
 use crate::process::{MemorySnapshot, ProcessSnapshot};
@@ -27,7 +27,6 @@ pub struct AppSnapshot {
     pub gpu: Option<GpuOverview>,
     pub processes: Vec<EnrichedProcess>,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortMode {
@@ -107,9 +106,9 @@ impl UiState {
             .processes
             .iter()
             .filter(|process| {
-                self.process_type_filter.is_none_or(|wanted| {
-                    process.classification.process_type == wanted
-                }) && (query.is_empty() || matches_query(process, &query))
+                self.process_type_filter
+                    .is_none_or(|wanted| process.classification.process_type == wanted)
+                    && (query.is_empty() || matches_query(process, &query))
             })
             .collect();
 
@@ -147,8 +146,17 @@ impl UiState {
 
 fn matches_query(process: &EnrichedProcess, query: &str) -> bool {
     process.snapshot.name.to_ascii_lowercase().contains(query)
-        || process.snapshot.command_line().to_ascii_lowercase().contains(query)
-        || process.classification.process_type.to_string().to_ascii_lowercase().contains(query)
+        || process
+            .snapshot
+            .command_line()
+            .to_ascii_lowercase()
+            .contains(query)
+        || process
+            .classification
+            .process_type
+            .to_string()
+            .to_ascii_lowercase()
+            .contains(query)
         || project_label(process).to_ascii_lowercase().contains(query)
 }
 
@@ -305,7 +313,11 @@ pub fn format_snapshot(snapshot: &AppSnapshot, filter: Option<ProcessType>) -> S
         snapshot.load_average[2],
     ));
     if let Some(device) = snapshot.gpu.as_ref().and_then(|gpu| gpu.devices.first()) {
-        output.push_str(&format!("  GPU{} {}", device.index, optional_percent(device.utilization_percent)));
+        output.push_str(&format!(
+            "  GPU{} {}",
+            device.index,
+            optional_percent(device.utilization_percent)
+        ));
         if let (Some(used), Some(total)) = (device.memory_used_bytes, device.memory_total_bytes) {
             output.push_str(&format!(
                 "  VRAM {} / {}",
@@ -342,18 +354,33 @@ pub fn format_snapshot(snapshot: &AppSnapshot, filter: Option<ProcessType>) -> S
 
 #[must_use]
 pub fn format_inspect(snapshot: &AppSnapshot, pid: i32) -> Option<String> {
-    let process = snapshot.processes.iter().find(|process| process.snapshot.pid == pid)?;
+    let process = snapshot
+        .processes
+        .iter()
+        .find(|process| process.snapshot.pid == pid)?;
     let mut output = String::new();
 
     output.push_str("Process Analysis\n");
     output.push_str("────────────────────────────────────────────────────────\n");
     output.push_str(&format!("PID        : {}\n", process.snapshot.pid));
     output.push_str(&format!("Name       : {}\n", process.snapshot.name));
-    output.push_str(&format!("Type       : {}\n", process.classification.process_type));
-    output.push_str(&format!("Confidence : {}\n", process.classification.confidence));
+    output.push_str(&format!(
+        "Type       : {}\n",
+        process.classification.process_type
+    ));
+    output.push_str(&format!(
+        "Confidence : {}\n",
+        process.classification.confidence
+    ));
     output.push_str(&format!("Project    : {}\n", project_label(process)));
-    output.push_str(&format!("CPU        : {:.1}%\n", process.snapshot.cpu_percent));
-    output.push_str(&format!("RAM        : {}\n", format_bytes(process.snapshot.memory_bytes)));
+    output.push_str(&format!(
+        "CPU        : {:.1}%\n",
+        process.snapshot.cpu_percent
+    ));
+    output.push_str(&format!(
+        "RAM        : {}\n",
+        format_bytes(process.snapshot.memory_bytes)
+    ));
     output.push_str(&format!(
         "GPU        : {}\n",
         process
@@ -364,12 +391,7 @@ pub fn format_inspect(snapshot: &AppSnapshot, pid: i32) -> Option<String> {
             .map(|value| format!("{value:.0}%"))
             .unwrap_or_else(|| "-".into())
     ));
-    if let Some(vram) = process
-        .snapshot
-        .gpu
-        .as_ref()
-        .and_then(|gpu| gpu.vram_bytes)
-    {
+    if let Some(vram) = process.snapshot.gpu.as_ref().and_then(|gpu| gpu.vram_bytes) {
         output.push_str(&format!("VRAM       : {}\n", format_bytes_long(vram)));
     }
     output.push('\n');

@@ -28,11 +28,14 @@ fn resolves_python_ros2_node_from_command_path_when_exe_is_interpreter() {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use proc_lens::process::{ProcessIdentity, ProcessSnapshot};
     use proc_lens::process::resolver::resolve_ros2_process;
+    use proc_lens::process::{ProcessIdentity, ProcessSnapshot};
 
     let process = ProcessSnapshot {
-        identity: ProcessIdentity { pid: 42, start_time_ticks: 1 },
+        identity: ProcessIdentity {
+            pid: 42,
+            start_time_ticks: 1,
+        },
         pid: 42,
         ppid: 1,
         name: "python3".into(),

@@ -1,11 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
-use proc_lens::app::{merge_gpu_sample, AppSnapshot, EnrichedProcess};
+use proc_lens::app::{AppSnapshot, EnrichedProcess, merge_gpu_sample};
 use proc_lens::classifier::{Classification, Confidence, ProcessType};
 use proc_lens::gpu::{GpuDeviceSnapshot, GpuSample};
-use proc_lens::process::{
-    MemorySnapshot, ProcessGpuUsage, ProcessIdentity, ProcessSnapshot,
-};
+use proc_lens::process::{MemorySnapshot, ProcessGpuUsage, ProcessIdentity, ProcessSnapshot};
 
 fn process(pid: i32) -> EnrichedProcess {
     EnrichedProcess {
@@ -79,7 +77,10 @@ fn gpu_sample_merges_vram_without_inventing_utilization() {
     let usage = snapshot.processes[0].snapshot.gpu.as_ref().unwrap();
     assert_eq!(usage.vram_bytes, Some(512 * 1024 * 1024));
     assert_eq!(usage.utilization_percent, None);
-    assert_eq!(snapshot.gpu.as_ref().unwrap().devices[0].utilization_percent, Some(61.0));
+    assert_eq!(
+        snapshot.gpu.as_ref().unwrap().devices[0].utilization_percent,
+        Some(61.0)
+    );
 }
 
 #[test]

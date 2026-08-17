@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use crate::collector::ParseError;
@@ -120,14 +120,14 @@ impl ProcCollector {
             let cgroup = fs::read_to_string(process_dir.join("cgroup"))
                 .map(|text| parse_cgroup_paths(&text))
                 .unwrap_or_default();
-            let environment = if should_read_environment(&raw_stat.name, executable.as_deref(), &command)
-            {
-                fs::read(process_dir.join("environ"))
-                    .map(|bytes| parse_selected_environment(&bytes))
-                    .unwrap_or_default()
-            } else {
-                BTreeMap::new()
-            };
+            let environment =
+                if should_read_environment(&raw_stat.name, executable.as_deref(), &command) {
+                    fs::read(process_dir.join("environ"))
+                        .map(|bytes| parse_selected_environment(&bytes))
+                        .unwrap_or_default()
+                } else {
+                    BTreeMap::new()
+                };
 
             processes.push(ProcessSnapshot {
                 identity,
@@ -210,9 +210,11 @@ fn parse_field<T>(value: &str, field_number: usize) -> Result<T, ParseError>
 where
     T: std::str::FromStr,
 {
-    value
-        .parse::<T>()
-        .map_err(|_| ParseError::new(format!("invalid process stat field {field_number}: {value}")))
+    value.parse::<T>().map_err(|_| {
+        ParseError::new(format!(
+            "invalid process stat field {field_number}: {value}"
+        ))
+    })
 }
 
 fn invalid_data(error: ParseError) -> io::Error {
@@ -261,7 +263,10 @@ fn should_read_environment(name: &str, executable: Option<&Path>, command: &[Str
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| name == "ros2")
         })
-        || executable.is_some_and(|path| path.components().any(|part| part.as_os_str() == OsStr::new("install")))
+        || executable.is_some_and(|path| {
+            path.components()
+                .any(|part| part.as_os_str() == OsStr::new("install"))
+        })
 }
 
 fn parse_selected_environment(bytes: &[u8]) -> LimitedEnvironment {
@@ -277,7 +282,8 @@ fn parse_selected_environment(bytes: &[u8]) -> LimitedEnvironment {
         .into_iter()
         .filter_map(|entry| {
             let (key, value) = entry.split_once('=')?;
-            KEYS.contains(&key).then(|| (key.to_owned(), value.to_owned()))
+            KEYS.contains(&key)
+                .then(|| (key.to_owned(), value.to_owned()))
         })
         .collect()
 }

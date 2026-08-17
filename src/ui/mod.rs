@@ -62,11 +62,7 @@ fn next_poll_timeout(elapsed: Duration) -> Duration {
     REFRESH_INTERVAL.saturating_sub(elapsed).min(EVENT_POLL)
 }
 
-fn handle_key(
-    state: &mut UiState,
-    snapshot: &crate::app::AppSnapshot,
-    key: KeyEvent,
-) -> bool {
+fn handle_key(state: &mut UiState, snapshot: &crate::app::AppSnapshot, key: KeyEvent) -> bool {
     if state.search_active {
         match key.code {
             KeyCode::Esc | KeyCode::Enter => state.search_active = false,
@@ -157,8 +153,14 @@ mod tests {
 
     #[test]
     fn next_poll_timeout_never_waits_past_refresh_deadline() {
-        assert_eq!(next_poll_timeout(Duration::from_millis(900)), Duration::from_millis(100));
-        assert_eq!(next_poll_timeout(Duration::from_millis(950)), Duration::from_millis(50));
+        assert_eq!(
+            next_poll_timeout(Duration::from_millis(900)),
+            Duration::from_millis(100)
+        );
+        assert_eq!(
+            next_poll_timeout(Duration::from_millis(950)),
+            Duration::from_millis(50)
+        );
         assert_eq!(next_poll_timeout(Duration::from_secs(1)), Duration::ZERO);
     }
 }

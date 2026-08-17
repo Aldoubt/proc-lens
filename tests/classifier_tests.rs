@@ -34,10 +34,12 @@ fn ros_args_produces_visible_ros2_evidence() {
     assert_eq!(classification.process_type, ProcessType::Ros2);
     assert!(classification.score >= 70);
     assert!(classification.confidence >= Confidence::Medium);
-    assert!(classification
-        .evidence
-        .iter()
-        .any(|evidence| evidence.message.contains("--ros-args")));
+    assert!(
+        classification
+            .evidence
+            .iter()
+            .any(|evidence| evidence.message.contains("--ros-args"))
+    );
 }
 
 #[test]
@@ -52,16 +54,20 @@ fn ros_install_layout_beats_container_context_as_primary_type() {
     let classification = classify(&process, &[]);
 
     assert_eq!(classification.process_type, ProcessType::Ros2);
-    assert!(classification
-        .evidence
-        .iter()
-        .any(|evidence| evidence.message.contains("install/<package>/lib")));
+    assert!(
+        classification
+            .evidence
+            .iter()
+            .any(|evidence| evidence.message.contains("install/<package>/lib"))
+    );
 }
 
 #[test]
 fn docker_cgroup_is_classified_as_container() {
     let mut process = fixture("python3");
-    process.cgroup.push("/system.slice/docker-deadbeef.scope".into());
+    process
+        .cgroup
+        .push("/system.slice/docker-deadbeef.scope".into());
 
     assert_eq!(classify(&process, &[]).process_type, ProcessType::Container);
 }
@@ -75,16 +81,24 @@ fn systemd_service_context_is_explained() {
 
     let classification = classify(&process, &[]);
     assert_eq!(classification.process_type, ProcessType::Systemd);
-    assert!(classification
-        .evidence
-        .iter()
-        .any(|evidence| evidence.message.contains(".service")));
+    assert!(
+        classification
+            .evidence
+            .iter()
+            .any(|evidence| evidence.message.contains(".service"))
+    );
 }
 
 #[test]
 fn development_and_browser_processes_are_recognized() {
-    assert_eq!(classify(&fixture("clangd"), &[]).process_type, ProcessType::Development);
-    assert_eq!(classify(&fixture("firefox"), &[]).process_type, ProcessType::Browser);
+    assert_eq!(
+        classify(&fixture("clangd"), &[]).process_type,
+        ProcessType::Development
+    );
+    assert_eq!(
+        classify(&fixture("firefox"), &[]).process_type,
+        ProcessType::Browser
+    );
 }
 
 #[test]
@@ -101,8 +115,10 @@ fn ros2_launch_command_is_classified_even_without_ros_args() {
     let classification = classify(&process, &[]);
 
     assert_eq!(classification.process_type, ProcessType::Ros2);
-    assert!(classification
-        .evidence
-        .iter()
-        .any(|evidence| evidence.message.contains("ros2 launch/run")));
+    assert!(
+        classification
+            .evidence
+            .iter()
+            .any(|evidence| evidence.message.contains("ros2 launch/run"))
+    );
 }
