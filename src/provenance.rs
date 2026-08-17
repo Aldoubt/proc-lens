@@ -44,6 +44,7 @@ pub fn resolve_process_provenance(
                         owner_pid: Some(owner.snapshot.pid),
                         owner_name: Some(owner.snapshot.name.clone()),
                         project_label: development_project_from_chain(process, processes)
+                            .or_else(|| development_family_label(owner).map(str::to_owned))
                             .unwrap_or_else(|| "-".into()),
                     };
                 }
@@ -58,6 +59,7 @@ pub fn resolve_process_provenance(
     let project = match direct_type {
         ProcessType::Browser => browser_family_label(process).unwrap_or("-").to_owned(),
         ProcessType::Development => development_project_from_chain(process, processes)
+            .or_else(|| development_family_label(process).map(str::to_owned))
             .unwrap_or_else(|| project_label(process)),
         ProcessType::Ros2
         | ProcessType::Container
@@ -131,6 +133,28 @@ fn git_project_from_cwd(cwd: Option<&Path>) -> Option<String> {
     }
 
     None
+}
+
+fn development_family_label(process: &EnrichedProcess) -> Option<&'static str> {
+    development_family_from_value(&process.snapshot.name).or_else(|| {
+        process
+            .snapshot
+            .executable
+            .as_deref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .and_then(development_family_from_value)
+    })
+}
+
+fn development_family_from_value(value: &str) -> Option<&'static str> {
+    match value.to_ascii_lowercase().as_str() {
+        "code" | "code-insiders" => Some("VS Code"),
+        "rust-analyzer" => Some("Rust"),
+        "clangd" => Some("Clang"),
+        "pyright-langserver" | "pylsp" => Some("Python"),
+        _ => None,
+    }
 }
 
 fn browser_family_label(process: &EnrichedProcess) -> Option<&'static str> {
