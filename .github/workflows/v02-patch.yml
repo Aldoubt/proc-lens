@@ -1,0 +1,33 @@
+name: v02-patch
+
+on:
+  push:
+    paths:
+      - .v02-patch-request
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.2-ux-stability
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply patch
+        run: |
+          python3 scripts/v02_patch.py
+          cargo fmt --all
+          git diff --check
+      - name: Commit patch
+        run: |
+          git config user.name "Xuan Yang"
+          git config user.email "xuanyang.robotics@gmail.com"
+          git add src tests README.md docs scripts || true
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: align systemd project identity"
+          git push origin HEAD:feat/v0.2-ux-stability
