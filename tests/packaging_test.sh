@@ -15,3 +15,10 @@ grep -q '^Terminal=true$' packaging/proc-lens.desktop
 test -s packaging/icons/proc-lens.svg
 test -s packaging/icons/proc-lens.png
 file packaging/icons/proc-lens.png | grep -q 'PNG image data, 256 x 256'
+
+test -s .github/workflows/release.yml
+grep -q "tags:" .github/workflows/release.yml
+grep -q "v\*" .github/workflows/release.yml
+grep -q 'contents: write' .github/workflows/release.yml
+grep -q 'scripts/build-deb.sh' .github/workflows/release.yml
+grep -q 'gh release' .github/workflows/release.yml
