@@ -1,16 +1,33 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Row, Table, TableState};
+use ratatui::widgets::{Block, Borders, Clear, Gauge, Paragraph, Row, Table, TableState, Wrap};
 
 use crate::app::{SortMode, UiState, ViewMode, format_bytes, project_label};
 
-use super::model::PresentationModel;
+use super::model::{PresentationModel, compact_command_label};
+
+const HELP_TEXT: &str = "↑ / k        previous process\n\
+↓ / j        next process\n\
+PgUp/PgDn   move one page\n\
+Home/End    first / last process\n\
+Enter       inspect selected PID\n\
+/           search\n\
+Space       pause / resume\n\
+r           refresh once while paused\n\
+t           tree mode\n\
+c / m       sort CPU / memory\n\
+g / p       sort GPU / PID\n\
+?           toggle this help\n\
+q / Esc     back / close";
 
 pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
     let snapshot = model.snapshot();
     if state.view == ViewMode::Detail {
         super::detail::render(frame, snapshot, state);
+        if state.help_open {
+            render_help(frame);
+        }
         return;
     }
 
@@ -27,14 +44,16 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
     } else {
         sort_label(state.sort)
     };
+    let status = if state.paused { "  PAUSED" } else { "" };
     let title = Paragraph::new(format!(
-        " proc-lens {}  load {:.2} {:.2} {:.2}  processes {}  mode {}",
+        " proc-lens {}  load {:.2} {:.2} {:.2}  processes {}  mode {}{}",
         env!("CARGO_PKG_VERSION"),
         snapshot.load_average[0],
         snapshot.load_average[1],
         snapshot.load_average[2],
         snapshot.processes.len(),
         mode,
+        status,
     ));
     frame.render_widget(title, title_area);
 
@@ -97,6 +116,7 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
         frame.render_widget(gpu, metric_areas[2]);
     }
 
+    let command_budget = usize::from(frame.area().width.saturating_sub(88)).max(20);
     let visible = model.visible_rows(state);
     let rows = visible.iter().map(|row| {
         let process = row.process;
@@ -107,7 +127,7 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
                 process.snapshot.name
             )
         } else {
-            process.snapshot.command_line()
+            compact_command_label(process, command_budget)
         };
         Row::new(vec![
             process.snapshot.pid.to_string(),
@@ -159,18 +179,42 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
     frame.render_stateful_widget(table, table_area, &mut table_state);
 
     let footer = if state.search_active {
-        format!(" /{}", state.query)
+        format!(" /{}  Enter/Esc done", state.query)
     } else {
-        format!(
-            " j/k move | Enter detail | / search{} | t tree | c cpu | m mem | g gpu | q quit",
-            if state.query.is_empty() {
-                String::new()
-            } else {
-                format!(" [{}]", state.query)
-            }
-        )
+        " ↑↓ move  Enter inspect  / search  Space pause  ? help".to_owned()
     };
     frame.render_widget(Paragraph::new(footer), footer_area);
+
+    if state.help_open {
+        render_help(frame);
+    }
+}
+
+fn render_help(frame: &mut Frame) {
+    let [_, middle, _] = Layout::vertical([
+        Constraint::Percentage(15),
+        Constraint::Percentage(70),
+        Constraint::Percentage(15),
+    ])
+    .areas(frame.area());
+    let [_, area, _] = Layout::horizontal([
+        Constraint::Percentage(20),
+        Constraint::Percentage(60),
+        Constraint::Percentage(20),
+    ])
+    .areas(middle);
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(HELP_TEXT)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("proc-lens help — ?/Esc/q close"),
+            )
+            .wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 fn sort_label(sort: SortMode) -> &'static str {
