@@ -19,8 +19,7 @@ fn systemd_project_label_ignores_user_manager_service() {
             cwd: None,
             command: vec!["ToDesk_Service".into()],
             cgroup: vec![
-                "/user.slice/user-1000.slice/user@1000.service/system.slice/todeskd.service"
-                    .into(),
+                "/user.slice/user-1000.slice/user@1000.service/system.slice/todeskd.service".into(),
             ],
             environment: BTreeMap::new(),
             cpu_percent: 0.0,
