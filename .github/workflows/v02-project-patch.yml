@@ -22,48 +22,43 @@ jobs:
 
           path = Path('src/app.rs')
           text = path.read_text()
-          old = '''    match process.classification.process_type {
-              ProcessType::Development | ProcessType::Browser => process.snapshot.name.clone(),
-              ProcessType::Container => "container".into(),
-              ProcessType::Systemd => systemd_unit(process).unwrap_or_else(|| "systemd".into()),
-              ProcessType::Ros2 | ProcessType::Generic => "-".into(),
-          }
-          }
 
-          fn systemd_unit(process: &EnrichedProcess) -> Option<String> {'''
-          new = '''    match process.classification.process_type {
-              ProcessType::Development => development_project_label(process).unwrap_or_else(|| "-".into()),
-              ProcessType::Container => "container".into(),
-              ProcessType::Systemd => systemd_unit(process).unwrap_or_else(|| "systemd".into()),
-              ProcessType::Ros2 | ProcessType::Browser | ProcessType::Generic => "-".into(),
-          }
-          }
+          dev_old = 'ProcessType::Development | ProcessType::Browser => process.snapshot.name.clone(),'
+          dev_new = 'ProcessType::Development => development_project_label(process).unwrap_or_else(|| "-".into()),'
+          generic_old = 'ProcessType::Ros2 | ProcessType::Generic => "-".into(),'
+          generic_new = 'ProcessType::Ros2 | ProcessType::Browser | ProcessType::Generic => "-".into(),'
+          marker = 'fn systemd_unit(process: &EnrichedProcess) -> Option<String> {'
+          helper = "\n".join([
+              'fn development_project_label(process: &EnrichedProcess) -> Option<String> {',
+              '    let mut current = process.snapshot.cwd.as_deref()?;',
+              '    for depth in 0..=8 {',
+              '        match current.join(".git").try_exists() {',
+              '            Ok(true) => {',
+              '                return current',
+              '                    .file_name()',
+              '                    .map(|name| name.to_string_lossy().into_owned());',
+              '            }',
+              '            Ok(false) => {}',
+              '            Err(_) => return None,',
+              '        }',
+              '',
+              '        if depth == 8 {',
+              '            break;',
+              '        }',
+              '        current = current.parent()?;',
+              '    }',
+              '    None',
+              '}',
+              '',
+          ])
 
-          fn development_project_label(process: &EnrichedProcess) -> Option<String> {
-              let mut current = process.snapshot.cwd.as_deref()?;
-              for depth in 0..=8 {
-                  match current.join(".git").try_exists() {
-                      Ok(true) => {
-                          return current
-                              .file_name()
-                              .map(|name| name.to_string_lossy().into_owned());
-                      }
-                      Ok(false) => {}
-                      Err(_) => return None,
-                  }
-
-                  if depth == 8 {
-                      break;
-                  }
-                  current = current.parent()?;
-              }
-              None
-          }
-
-          fn systemd_unit(process: &EnrichedProcess) -> Option<String> {'''
-          if old not in text:
-              raise SystemExit('expected project_label block not found')
-          path.write_text(text.replace(old, new, 1))
+          for expected in (dev_old, generic_old, marker):
+              if expected not in text:
+                  raise SystemExit(f'expected token not found: {expected}')
+          text = text.replace(dev_old, dev_new, 1)
+          text = text.replace(generic_old, generic_new, 1)
+          text = text.replace(marker, helper + marker, 1)
+          path.write_text(text)
           PY
           cargo fmt -- src/app.rs
           git diff --check
