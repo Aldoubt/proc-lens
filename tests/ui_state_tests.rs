@@ -85,8 +85,10 @@ fn ui_state_sort_modes_change_process_order() {
 #[test]
 fn ui_state_search_matches_type_name_and_command() {
     let snapshot = snapshot();
-    let mut state = UiState::default();
-    state.query = "ros2".into();
+    let mut state = UiState {
+        query: "ros2".into(),
+        ..UiState::default()
+    };
     let visible = state.visible_processes(&snapshot);
     assert_eq!(visible.len(), 1);
     assert_eq!(visible[0].snapshot.pid, 10);
@@ -98,9 +100,11 @@ fn ui_state_search_matches_type_name_and_command() {
 #[test]
 fn ui_state_tree_mode_uses_tree_order() {
     let snapshot = snapshot();
-    let mut state = UiState::default();
-    state.sort = SortMode::Memory;
-    state.tree_mode = true;
+    let state = UiState {
+        sort: SortMode::Memory,
+        tree_mode: true,
+        ..UiState::default()
+    };
 
     let visible = state.visible_processes(&snapshot);
     assert_eq!(visible[0].snapshot.pid, 10);
@@ -131,8 +135,10 @@ fn gpu_sort_falls_back_to_vram_when_utilization_is_unavailable() {
         utilization_percent: None,
     });
 
-    let mut state = UiState::default();
-    state.sort = SortMode::Gpu;
+    let state = UiState {
+        sort: SortMode::Gpu,
+        ..UiState::default()
+    };
 
     assert_eq!(state.visible_processes(&snapshot)[0].snapshot.pid, 20);
 }
