@@ -44,53 +44,36 @@ pub enum ViewMode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiState {
-    pub selected: usize,
+    pub selected_pid: Option<i32>,
     pub query: String,
     pub search_active: bool,
     pub process_type_filter: Option<ProcessType>,
     pub tree_mode: bool,
     pub sort: SortMode,
     pub view: ViewMode,
+    pub paused: bool,
+    pub help_open: bool,
 }
 
 impl Default for UiState {
     fn default() -> Self {
         Self {
-            selected: 0,
+            selected_pid: None,
             query: String::new(),
             search_active: false,
             process_type_filter: None,
             tree_mode: false,
             sort: SortMode::Cpu,
             view: ViewMode::List,
+            paused: false,
+            help_open: false,
         }
     }
 }
 
 impl UiState {
-    pub fn move_down(&mut self, visible_len: usize) {
-        if visible_len == 0 {
-            self.selected = 0;
-        } else {
-            self.selected = (self.selected + 1).min(visible_len - 1);
-        }
-    }
-
-    pub fn move_up(&mut self) {
-        self.selected = self.selected.saturating_sub(1);
-    }
-
-    pub fn clamp_selection(&mut self, visible_len: usize) {
-        if visible_len == 0 {
-            self.selected = 0;
-        } else {
-            self.selected = self.selected.min(visible_len - 1);
-        }
-    }
-
-    pub fn open_detail(&mut self, visible_len: usize) {
-        if visible_len > 0 {
-            self.clamp_selection(visible_len);
+    pub fn open_detail(&mut self) {
+        if self.selected_pid.is_some() {
             self.view = ViewMode::Detail;
         }
     }
@@ -98,84 +81,6 @@ impl UiState {
     pub fn back(&mut self) {
         self.view = ViewMode::List;
     }
-
-    #[must_use]
-    pub fn visible_processes<'a>(&self, snapshot: &'a AppSnapshot) -> Vec<&'a EnrichedProcess> {
-        let query = self.query.trim().to_ascii_lowercase();
-        let mut rows: Vec<&EnrichedProcess> = snapshot
-            .processes
-            .iter()
-            .filter(|process| {
-                self.process_type_filter
-                    .is_none_or(|wanted| process.classification.process_type == wanted)
-                    && (query.is_empty() || matches_query(process, &query))
-            })
-            .collect();
-
-        if self.tree_mode {
-            rows.sort_by_key(|process| process.tree_order);
-            return rows;
-        }
-
-        match self.sort {
-            SortMode::Cpu => rows.sort_by(|left, right| {
-                right
-                    .snapshot
-                    .cpu_percent
-                    .total_cmp(&left.snapshot.cpu_percent)
-                    .then_with(|| left.snapshot.pid.cmp(&right.snapshot.pid))
-            }),
-            SortMode::Memory => rows.sort_by(|left, right| {
-                right
-                    .snapshot
-                    .memory_bytes
-                    .cmp(&left.snapshot.memory_bytes)
-                    .then_with(|| left.snapshot.pid.cmp(&right.snapshot.pid))
-            }),
-            SortMode::Gpu => rows.sort_by(|left, right| {
-                gpu_sort_value(right)
-                    .total_cmp(&gpu_sort_value(left))
-                    .then_with(|| gpu_vram_value(right).cmp(&gpu_vram_value(left)))
-                    .then_with(|| left.snapshot.pid.cmp(&right.snapshot.pid))
-            }),
-            SortMode::Pid => rows.sort_by_key(|process| process.snapshot.pid),
-        }
-        rows
-    }
-}
-
-fn matches_query(process: &EnrichedProcess, query: &str) -> bool {
-    process.snapshot.name.to_ascii_lowercase().contains(query)
-        || process
-            .snapshot
-            .command_line()
-            .to_ascii_lowercase()
-            .contains(query)
-        || process
-            .classification
-            .process_type
-            .to_string()
-            .to_ascii_lowercase()
-            .contains(query)
-        || project_label(process).to_ascii_lowercase().contains(query)
-}
-
-fn gpu_sort_value(process: &EnrichedProcess) -> f32 {
-    process
-        .snapshot
-        .gpu
-        .as_ref()
-        .and_then(|gpu| gpu.utilization_percent)
-        .unwrap_or(-1.0)
-}
-
-fn gpu_vram_value(process: &EnrichedProcess) -> u64 {
-    process
-        .snapshot
-        .gpu
-        .as_ref()
-        .and_then(|gpu| gpu.vram_bytes)
-        .unwrap_or(0)
 }
 
 pub struct Inspector {
