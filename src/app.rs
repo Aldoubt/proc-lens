@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
-use crate::classifier::{Classification, ProcessType, classify};
+use crate::classifier::{Classification, ProcessType, classify, systemd_service_unit};
 use crate::collector::process::ProcCollector;
 use crate::gpu::{GpuOverview, GpuProvider, GpuSample, default_provider};
 use crate::process::resolver::{ProjectIdentity, resolve_ros2_process};
@@ -520,9 +520,7 @@ fn systemd_unit(process: &EnrichedProcess) -> Option<String> {
         .snapshot
         .cgroup
         .iter()
-        .flat_map(|path| path.split('/'))
-        .find(|part| part.ends_with(".service"))
-        .map(str::to_owned)
+        .find_map(|path| systemd_service_unit(path).map(str::to_owned))
 }
 
 fn process_gpu_label(process: &EnrichedProcess) -> String {
