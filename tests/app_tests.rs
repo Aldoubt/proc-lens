@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use proc_lens::app::{AppSnapshot, EnrichedProcess, format_inspect, format_snapshot};
+use proc_lens::app::{
+    AppSnapshot, EnrichedProcess, format_inspect, format_snapshot, project_label,
+};
 use proc_lens::classifier::{Classification, Confidence, Evidence, ProcessType};
 use proc_lens::process::{MemorySnapshot, ProcessIdentity, ProcessSnapshot, ProjectIdentity};
 
@@ -114,4 +118,39 @@ fn cli_inspect_names_parent_processes_when_they_are_still_visible() {
 
     assert!(output.contains("PID 100: ros2 launch agt_bringup navigation.launch.py"));
     assert!(output.contains("PID 1: <exited or inaccessible>"));
+}
+
+#[test]
+fn development_project_label_uses_nearest_git_root() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("proc-lens-project-{nonce}"));
+    let nested = root.join("src").join("deep");
+    fs::create_dir_all(root.join(".git")).expect("create git marker");
+    fs::create_dir_all(&nested).expect("create nested cwd");
+
+    let mut process = enriched();
+    process.snapshot.name = "clangd".into();
+    process.snapshot.cwd = Some(nested);
+    process.project = None;
+    process.classification.process_type = ProcessType::Development;
+
+    assert_eq!(
+        project_label(&process),
+        root.file_name().unwrap().to_string_lossy()
+    );
+
+    fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
+fn browser_project_label_is_not_the_executable_name() {
+    let mut process = enriched();
+    process.snapshot.name = "firefox".into();
+    process.project = None;
+    process.classification.process_type = ProcessType::Browser;
+
+    assert_eq!(project_label(&process), "-");
 }
