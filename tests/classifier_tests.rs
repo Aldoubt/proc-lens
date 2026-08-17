@@ -162,3 +162,39 @@ fn ros2_still_beats_concrete_systemd_context() {
 
     assert_eq!(classify(&process, &[]).process_type, ProcessType::Ros2);
 }
+
+#[test]
+fn inherited_ros_environment_does_not_override_development_tool() {
+    let mut process = fixture("code");
+    process.environment.insert("ROS_VERSION".into(), "2".into());
+    process
+        .environment
+        .insert("AMENT_PREFIX_PATH".into(), "/opt/ros/humble".into());
+
+    assert_eq!(
+        classify(&process, &[]).process_type,
+        ProcessType::Development
+    );
+}
+
+#[test]
+fn inherited_ros_environment_does_not_override_browser() {
+    let mut process = fixture("firefox");
+    process.environment.insert("ROS_VERSION".into(), "2".into());
+    process
+        .environment
+        .insert("AMENT_PREFIX_PATH".into(), "/opt/ros/humble".into());
+
+    assert_eq!(classify(&process, &[]).process_type, ProcessType::Browser);
+}
+
+#[test]
+fn inherited_ros_environment_can_still_identify_generic_ros_process() {
+    let mut process = fixture("python3");
+    process.environment.insert("ROS_VERSION".into(), "2".into());
+    process
+        .environment
+        .insert("AMENT_PREFIX_PATH".into(), "/opt/ros/humble".into());
+
+    assert_eq!(classify(&process, &[]).process_type, ProcessType::Ros2);
+}
