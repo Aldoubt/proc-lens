@@ -1,0 +1,20 @@
+[package]
+name = "proc-lens"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A lightweight Linux process inspector focused on provenance and project-aware classification"
+license = "MIT"
+readme = "README.md"
+keywords = ["linux", "process", "monitor", "ros2", "tui"]
+categories = ["command-line-utilities"]
+
+[features]
+default = ["gpu-nvidia"]
+gpu-nvidia = ["dep:nvml-wrapper"]
+
+[dependencies]
+clap = { version = "4.6.4", features = ["derive"] }
+crossterm = "0.29.0"
+ratatui = "0.30.2"
+nvml-wrapper = { version = "0.12.1", optional = true }
