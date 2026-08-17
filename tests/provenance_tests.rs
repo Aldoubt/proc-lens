@@ -1,0 +1,133 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use proc_lens::app::EnrichedProcess;
+use proc_lens::classifier::{Classification, Confidence, ProcessType};
+use proc_lens::process::{ProcessIdentity, ProcessSnapshot};
+use proc_lens::provenance::resolve_process_provenance;
+
+fn process(
+    pid: i32,
+    ppid: i32,
+    name: &str,
+    process_type: ProcessType,
+    parent_chain: Vec<i32>,
+) -> EnrichedProcess {
+    EnrichedProcess {
+        snapshot: ProcessSnapshot {
+            identity: ProcessIdentity {
+                pid,
+                start_time_ticks: pid as u64 + 100,
+            },
+            pid,
+            ppid,
+            name: name.into(),
+            executable: Some(PathBuf::from(format!("/usr/bin/{name}"))),
+            cwd: None,
+            command: vec![name.into()],
+            cgroup: Vec::new(),
+            environment: BTreeMap::new(),
+            cpu_percent: 0.0,
+            memory_bytes: 0,
+            gpu: None,
+        },
+        classification: Classification {
+            process_type,
+            confidence: Confidence::Medium,
+            score: 80,
+            evidence: Vec::new(),
+        },
+        project: None,
+        parent_chain,
+        tree_depth: 0,
+        tree_order: pid as usize,
+    }
+}
+
+#[test]
+fn generic_firefox_child_inherits_browser_owner() {
+    let browser = process(100, 1, "firefox", ProcessType::Browser, vec![1]);
+    let child = process(
+        101,
+        100,
+        "Isolated Web Co",
+        ProcessType::Generic,
+        vec![100, 1],
+    );
+    let processes = vec![browser, child.clone()];
+
+    let provenance = resolve_process_provenance(&child, &processes);
+
+    assert_eq!(provenance.process_type, ProcessType::Browser);
+    assert_eq!(provenance.owner_pid, Some(100));
+    assert_eq!(provenance.owner_name.as_deref(), Some("firefox"));
+    assert_eq!(provenance.project_label, "Firefox");
+}
+
+#[test]
+fn nearest_meaningful_ancestor_wins() {
+    let browser = process(100, 1, "firefox", ProcessType::Browser, vec![1]);
+    let code = process(
+        110,
+        100,
+        "code",
+        ProcessType::Development,
+        vec![100, 1],
+    );
+    let child = process(
+        111,
+        110,
+        "utility-process",
+        ProcessType::Generic,
+        vec![110, 100, 1],
+    );
+    let processes = vec![browser, code, child.clone()];
+
+    let provenance = resolve_process_provenance(&child, &processes);
+
+    assert_eq!(provenance.process_type, ProcessType::Development);
+    assert_eq!(provenance.owner_pid, Some(110));
+    assert_eq!(provenance.owner_name.as_deref(), Some("code"));
+}
+
+#[test]
+fn direct_systemd_is_never_overwritten_by_browser_ancestor() {
+    let browser = process(100, 1, "firefox", ProcessType::Browser, vec![1]);
+    let service = process(
+        120,
+        100,
+        "helper-service",
+        ProcessType::Systemd,
+        vec![100, 1],
+    );
+    let processes = vec![browser, service.clone()];
+
+    let provenance = resolve_process_provenance(&service, &processes);
+
+    assert_eq!(provenance.process_type, ProcessType::Systemd);
+    assert_eq!(provenance.owner_pid, None);
+}
+
+#[test]
+fn direct_ros2_is_never_overwritten_by_dev_ancestor() {
+    let code = process(200, 1, "code", ProcessType::Development, vec![1]);
+    let node = process(201, 200, "fast_livo", ProcessType::Ros2, vec![200, 1]);
+    let processes = vec![code, node.clone()];
+
+    let provenance = resolve_process_provenance(&node, &processes);
+
+    assert_eq!(provenance.process_type, ProcessType::Ros2);
+    assert_eq!(provenance.owner_pid, None);
+}
+
+#[test]
+fn direct_browser_gets_normalized_family_project() {
+    let browser = process(300, 1, "firefox", ProcessType::Browser, vec![1]);
+    let processes = vec![browser.clone()];
+
+    let provenance = resolve_process_provenance(&browser, &processes);
+
+    assert_eq!(provenance.process_type, ProcessType::Browser);
+    assert_eq!(provenance.owner_pid, None);
+    assert_eq!(provenance.project_label, "Firefox");
+}
