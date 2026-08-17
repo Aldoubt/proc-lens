@@ -3,9 +3,12 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Row, Table, TableState};
 
-use crate::app::{AppSnapshot, SortMode, UiState, ViewMode, format_bytes, project_label};
+use crate::app::{SortMode, UiState, ViewMode, format_bytes, project_label};
 
-pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
+use super::model::PresentationModel;
+
+pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
+    let snapshot = model.snapshot();
     if state.view == ViewMode::Detail {
         super::detail::render(frame, snapshot, state);
         return;
@@ -94,8 +97,9 @@ pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
         frame.render_widget(gpu, metric_areas[2]);
     }
 
-    let visible = state.visible_processes(snapshot);
-    let rows = visible.iter().map(|process| {
+    let visible = model.visible_rows(state);
+    let rows = visible.iter().map(|row| {
+        let process = row.process;
         let command = if state.tree_mode {
             format!(
                 "{}{}",
@@ -109,7 +113,7 @@ pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
             process.snapshot.pid.to_string(),
             process.classification.process_type.to_string(),
             project_label(process),
-            format!("{:.1}", process.snapshot.cpu_percent),
+            format!("{:.1}", row.cpu_percent),
             format_bytes(process.snapshot.memory_bytes),
             process
                 .snapshot
@@ -151,8 +155,7 @@ pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
     .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
     .highlight_symbol("> ");
 
-    let mut table_state =
-        TableState::default().with_selected((!visible.is_empty()).then_some(state.selected));
+    let mut table_state = TableState::default().with_selected(model.selected_index(state));
     frame.render_stateful_widget(table, table_area, &mut table_state);
 
     let footer = if state.search_active {
