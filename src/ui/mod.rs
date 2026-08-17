@@ -1,5 +1,6 @@
 mod dashboard;
 mod detail;
+pub mod model;
 
 use std::io;
 use std::time::{Duration, Instant};
@@ -8,6 +9,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 
 use crate::app::{Inspector, SortMode, UiState, ViewMode};
 use crate::classifier::ProcessType;
+use model::PresentationModel;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const EVENT_POLL: Duration = Duration::from_millis(100);
@@ -16,20 +18,19 @@ pub fn run(initial_type_filter: Option<ProcessType>) -> io::Result<()> {
     let mut inspector = Inspector::default();
     let _ = inspector.refresh()?;
     std::thread::sleep(Duration::from_millis(250));
-    let mut snapshot = inspector.refresh()?;
+    let snapshot = inspector.refresh()?;
     let mut state = UiState {
         process_type_filter: initial_type_filter,
         ..UiState::default()
     };
+    let mut model = PresentationModel::new(snapshot, &mut state);
     let mut last_refresh = Instant::now();
 
     ratatui::run(|terminal| {
         let mut dirty = true;
         loop {
             if dirty {
-                let visible_len = state.visible_processes(&snapshot).len();
-                state.clamp_selection(visible_len);
-                terminal.draw(|frame| dashboard::render(frame, &snapshot, &state))?;
+                terminal.draw(|frame| dashboard::render(frame, &model, &state))?;
                 dirty = false;
             }
 
@@ -37,7 +38,7 @@ pub fn run(initial_type_filter: Option<ProcessType>) -> io::Result<()> {
             if event::poll(timeout)? {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        if handle_key(&mut state, &snapshot, key) {
+                        if handle_key(&mut state, &mut model, key) {
                             break Ok(());
                         }
                         dirty = true;
@@ -49,7 +50,7 @@ pub fn run(initial_type_filter: Option<ProcessType>) -> io::Result<()> {
 
             if last_refresh.elapsed() >= REFRESH_INTERVAL {
                 if let Ok(next) = inspector.refresh() {
-                    snapshot = next;
+                    model.integrate_snapshot(next, &mut state, true);
                 }
                 last_refresh = Instant::now();
                 dirty = true;
@@ -62,24 +63,23 @@ fn next_poll_timeout(elapsed: Duration) -> Duration {
     REFRESH_INTERVAL.saturating_sub(elapsed).min(EVENT_POLL)
 }
 
-fn handle_key(state: &mut UiState, snapshot: &crate::app::AppSnapshot, key: KeyEvent) -> bool {
+fn handle_key(state: &mut UiState, model: &mut PresentationModel, key: KeyEvent) -> bool {
     if state.search_active {
         match key.code {
             KeyCode::Esc | KeyCode::Enter => state.search_active = false,
             KeyCode::Backspace => {
                 state.query.pop();
-                state.selected = 0;
+                model.reorder(state);
             }
             KeyCode::Char(character) => {
                 state.query.push(character);
-                state.selected = 0;
+                model.reorder(state);
             }
             _ => {}
         }
         return false;
     }
 
-    let visible_len = state.visible_processes(snapshot).len();
     match key.code {
         KeyCode::Char('q') => {
             if state.view == ViewMode::Detail {
@@ -94,20 +94,20 @@ fn handle_key(state: &mut UiState, snapshot: &crate::app::AppSnapshot, key: KeyE
                 state.back();
             } else if !state.query.is_empty() {
                 state.query.clear();
-                state.selected = 0;
+                model.reorder(state);
             }
             false
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            state.move_down(visible_len);
+            model.move_selection(state, 1);
             false
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            state.move_up();
+            model.move_selection(state, -1);
             false
         }
         KeyCode::Enter => {
-            state.open_detail(visible_len);
+            state.open_detail();
             false
         }
         KeyCode::Char('/') if state.view == ViewMode::List => {
@@ -116,31 +116,31 @@ fn handle_key(state: &mut UiState, snapshot: &crate::app::AppSnapshot, key: KeyE
         }
         KeyCode::Char('t') if state.view == ViewMode::List => {
             state.tree_mode = !state.tree_mode;
-            state.selected = 0;
+            model.reorder(state);
             false
         }
         KeyCode::Char('c') if state.view == ViewMode::List => {
             state.sort = SortMode::Cpu;
             state.tree_mode = false;
-            state.selected = 0;
+            model.reorder(state);
             false
         }
         KeyCode::Char('m') if state.view == ViewMode::List => {
             state.sort = SortMode::Memory;
             state.tree_mode = false;
-            state.selected = 0;
+            model.reorder(state);
             false
         }
         KeyCode::Char('g') if state.view == ViewMode::List => {
             state.sort = SortMode::Gpu;
             state.tree_mode = false;
-            state.selected = 0;
+            model.reorder(state);
             false
         }
         KeyCode::Char('p') if state.view == ViewMode::List => {
             state.sort = SortMode::Pid;
             state.tree_mode = false;
-            state.selected = 0;
+            model.reorder(state);
             false
         }
         _ => false,
