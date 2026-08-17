@@ -4,10 +4,9 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use crate::app::{AppSnapshot, UiState, format_inspect};
 
 pub fn render(frame: &mut Frame, snapshot: &AppSnapshot, state: &UiState) {
-    let visible = state.visible_processes(snapshot);
-    let text = visible
-        .get(state.selected)
-        .and_then(|process| format_inspect(snapshot, process.snapshot.pid))
+    let text = state
+        .selected_pid
+        .and_then(|pid| format_inspect(snapshot, pid))
         .unwrap_or_else(|| "Process is no longer available".into());
 
     let paragraph = Paragraph::new(text)
