@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use proc_lens::app::{AppSnapshot, EnrichedProcess, SortMode, UiState};
 use proc_lens::classifier::{Classification, Confidence, ProcessType};
 use proc_lens::process::{MemorySnapshot, ProcessIdentity, ProcessSnapshot};
-use proc_lens::ui::model::{CPU_EMA_ALPHA, PresentationModel};
+use proc_lens::ui::model::{CPU_EMA_ALPHA, PresentationModel, compact_command_label};
 
 fn process(pid: i32, start: u64, cpu: f32, ram: u64) -> EnrichedProcess {
     EnrichedProcess {
@@ -170,4 +170,50 @@ fn sort_mode_change_can_force_immediate_reorder() {
     model.reorder(&mut state);
 
     assert_eq!(model.ordered_pids(&state), vec![20, 10]);
+}
+
+#[test]
+fn page_and_boundary_navigation_keep_pid_selection() {
+    let first = snapshot(vec![
+        process(10, 100, 40.0, 100),
+        process(20, 200, 30.0, 100),
+        process(30, 300, 20.0, 100),
+        process(40, 400, 10.0, 100),
+    ]);
+    let mut state = UiState::default();
+    let model = PresentationModel::new(first, &mut state);
+
+    model.select_first(&mut state);
+    assert_eq!(state.selected_pid, Some(10));
+
+    model.move_page(&mut state, 2, 1);
+    assert_eq!(state.selected_pid, Some(30));
+
+    model.select_last(&mut state);
+    assert_eq!(state.selected_pid, Some(40));
+
+    model.move_page(&mut state, 2, -1);
+    assert_eq!(state.selected_pid, Some(20));
+}
+
+#[test]
+fn compact_command_hides_noisy_browser_argv() {
+    let mut firefox = process(50, 500, 1.0, 100);
+    firefox.snapshot.name = "firefox".into();
+    firefox.snapshot.command = vec![
+        "/snap/firefox/8736/usr/lib/firefox/firefox".into(),
+        "-contentproc".into(),
+        "-isForBrowser".into(),
+        "-prefsHandle".into(),
+        "0:50".into(),
+        "-prefMapHandle".into(),
+        "1:2345".into(),
+    ];
+
+    let label = compact_command_label(&firefox, 32);
+
+    assert!(label.starts_with("firefox"));
+    assert!(label.contains("-contentproc"));
+    assert!(label.chars().count() <= 32);
+    assert!(!label.contains("-prefsHandle"));
 }
