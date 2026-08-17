@@ -42,7 +42,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rsync -a --delete --exclude='.git' /tmp/proc-lens-src/proc-lens/ ./
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.github/workflows' \
+            /tmp/proc-lens-src/proc-lens/ ./
 
       - name: Commit source tree
         shell: bash
