@@ -232,3 +232,20 @@ fn unknown_dev_without_git_remains_unknown() {
 
     assert_eq!(provenance.project_label, "-");
 }
+
+#[test]
+fn approved_dev_families_have_conservative_fallback_labels() {
+    for (pid, name, expected) in [
+        (550, "code-insiders", "VS Code"),
+        (551, "clangd", "Clang"),
+        (552, "pyright-langserver", "Python"),
+        (553, "pylsp", "Python"),
+    ] {
+        let tool = process(pid, 1, name, ProcessType::Development, vec![1]);
+        let processes = vec![tool.clone()];
+
+        let provenance = resolve_process_provenance(&tool, &processes);
+
+        assert_eq!(provenance.project_label, expected, "family for {name}");
+    }
+}
