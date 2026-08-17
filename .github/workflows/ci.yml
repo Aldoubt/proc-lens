@@ -41,5 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked --version 3.7.0
       - name: Build and validate Debian package
         run: ./scripts/build-deb.sh
