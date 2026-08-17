@@ -486,13 +486,35 @@ pub fn project_label(process: &EnrichedProcess) -> String {
     }
 
     match process.classification.process_type {
-        ProcessType::Development | ProcessType::Browser => process.snapshot.name.clone(),
+        ProcessType::Development => {
+            development_project_label(process).unwrap_or_else(|| "-".into())
+        }
         ProcessType::Container => "container".into(),
         ProcessType::Systemd => systemd_unit(process).unwrap_or_else(|| "systemd".into()),
-        ProcessType::Ros2 | ProcessType::Generic => "-".into(),
+        ProcessType::Ros2 | ProcessType::Browser | ProcessType::Generic => "-".into(),
     }
 }
 
+fn development_project_label(process: &EnrichedProcess) -> Option<String> {
+    let mut current = process.snapshot.cwd.as_deref()?;
+    for depth in 0..=8 {
+        match current.join(".git").try_exists() {
+            Ok(true) => {
+                return current
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned());
+            }
+            Ok(false) => {}
+            Err(_) => return None,
+        }
+
+        if depth == 8 {
+            break;
+        }
+        current = current.parent()?;
+    }
+    None
+}
 fn systemd_unit(process: &EnrichedProcess) -> Option<String> {
     process
         .snapshot
