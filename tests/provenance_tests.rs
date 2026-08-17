@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use proc_lens::app::EnrichedProcess;
 use proc_lens::classifier::{Classification, Confidence, ProcessType};
@@ -124,4 +126,36 @@ fn direct_browser_gets_normalized_family_project() {
     assert_eq!(provenance.process_type, ProcessType::Browser);
     assert_eq!(provenance.owner_pid, None);
     assert_eq!(provenance.project_label, "Firefox");
+}
+
+#[test]
+fn inherited_dev_project_uses_ancestor_cwd_git_root() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("proc-lens-prov-{nonce}"));
+    let owner_cwd = root.join("src").join("deep");
+    fs::create_dir_all(root.join(".git")).expect("create git marker");
+    fs::create_dir_all(&owner_cwd).expect("create owner cwd");
+
+    let mut code = process(400, 1, "code", ProcessType::Development, vec![1]);
+    code.snapshot.cwd = Some(owner_cwd);
+    let child = process(
+        401,
+        400,
+        "utility-process",
+        ProcessType::Generic,
+        vec![400, 1],
+    );
+    let processes = vec![code, child.clone()];
+
+    let provenance = resolve_process_provenance(&child, &processes);
+
+    assert_eq!(
+        provenance.project_label,
+        root.file_name().unwrap().to_string_lossy()
+    );
+
+    fs::remove_dir_all(root).expect("remove fixture");
 }
