@@ -1,4 +1,4 @@
-name: bootstrap-v023-release
+name: verify-v023-release
 
 on:
   push:
@@ -6,36 +6,22 @@ on:
       - feat/v0.2.3-ubuntu-packaging
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  publish:
+  verify:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-deb
-        run: cargo install cargo-deb --locked --version 3.7.0
-      - name: Build and validate package
-        run: ./scripts/build-deb.sh
-      - name: Create annotated tag and release
+      - name: Verify release metadata and downloaded Debian package
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_SHA: 244a778589067d0129cdeb03223d56381f8593cb
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if ! git ls-remote --exit-code --tags origin refs/tags/v0.2.3 >/dev/null 2>&1; then
-            git tag -a v0.2.3 "$RELEASE_SHA" -m 'proc-lens v0.2.3'
-            git push origin refs/tags/v0.2.3
-          fi
-          deb='target/debian/proc-lens_0.2.3-1_amd64.deb'
-          test -f "$deb"
-          if gh release view v0.2.3 >/dev/null 2>&1; then
-            gh release upload v0.2.3 "$deb" --clobber
-          else
-            gh release create v0.2.3 "$deb" --title v0.2.3 --generate-notes
-          fi
+          gh release view v0.2.3 --json tagName,isDraft,isPrerelease,assets
+          mkdir -p /tmp/proc-lens-release
+          gh release download v0.2.3 \
+            --pattern 'proc-lens_0.2.3-1_amd64.deb' \
+            --dir /tmp/proc-lens-release
+          ./scripts/validate-deb.sh \
+            /tmp/proc-lens-release/proc-lens_0.2.3-1_amd64.deb
