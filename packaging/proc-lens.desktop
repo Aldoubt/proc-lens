@@ -1,0 +1,17 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=proc-lens
+Name[zh_CN]=proc-lens 进程透镜
+GenericName=Linux Process Inspector
+GenericName[zh_CN]=Linux 进程检查器
+Comment=Inspect process provenance, projects and resource usage
+Comment[zh_CN]=查看 Linux 进程来源、项目归属与资源占用
+TryExec=proc-lens
+Exec=proc-lens
+Icon=proc-lens
+Terminal=true
+StartupNotify=false
+Categories=System;Monitor;Utility;
+Keywords=process;monitor;system;ros2;gpu;linux;
+Keywords[zh_CN]=进程;监控;系统;ROS2;GPU;Linux;
