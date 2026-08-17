@@ -35,3 +35,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.88.0
       - name: Check minimum supported Rust version
         run: cargo check --all-targets --all-features
+
+  package:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and validate Debian package
+        run: ./scripts/build-deb.sh
