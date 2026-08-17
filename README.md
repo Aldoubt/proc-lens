@@ -10,8 +10,8 @@
   <img src="docs/assets/proc-lens-v0.2.2-tui.png" alt="proc-lens v0.2.2 TUI" width="900">
 </p>
 
-> Screenshot captured from a real Ubuntu workstation running v0.2.2. Values are machine/runtime dependent.  
-> 截图来自真实 Ubuntu 工作站上的 v0.2.2；资源数值会随机器和运行状态变化。
+> Screenshot captured from a real Ubuntu workstation. Values are machine/runtime dependent.  
+> 截图来自真实 Ubuntu 工作站；资源数值会随机器和运行状态变化。
 
 ---
 
@@ -23,78 +23,65 @@ Tools such as `top`, `htop`, and `btop` are excellent at showing resource usage,
 
 - Is this PID a ROS 2 node, a browser child, a systemd service, or a development tool?
 - Which ROS 2 workspace or Git project does it belong to?
-- Is `Isolated Web Co` actually part of Firefox?
-- Is a `code` subprocess tied to a repository, or only to the VS Code application family?
-- Can the answer remain deterministic and inspectable rather than being guessed?
+- Which parent application owns a generic child process?
+- How much CPU, RAM, GPU, and VRAM is it consuming?
 
-`proc-lens` combines direct `/proc` sampling with deterministic classification and a separate parent-chain provenance layer.
+proc-lens combines `/proc`-native collection with deterministic direct classification and conservative display provenance.
 
-## v0.2.2 highlights
+## Ubuntu package installation
 
-- **Linux-native collection** from `/proc`; no `ps`, `pstree`, or `nvidia-smi` subprocesses in the sampling loop
-- **Stable TUI** with 1 Hz sampling, CPU EMA smoothing, delayed reordering, PID-anchored selection, search, pause, and manual refresh
-- **Explainable direct classification**: `ROS2`, `CONTAINER`, `SYSTEMD`, `DEV`, `BROWSER`, `PROCESS`
-- **Parent-chain provenance** for generic Browser/DEV children without changing their raw per-PID evidence
-- **ROS 2-aware identity** using installed-node paths, `--ros-args`, launch/run ancestry, and workspace/package resolution
-- **Concrete systemd unit detection** while ignoring `user@<uid>.service` as generic desktop-service-manager evidence
-- **Git-aware DEV project labels** from current/ancestor cwd values
-- **Conservative DEV family fallback** when no repository can be proven
-- **Optional NVIDIA NVML support** for global GPU state and per-process VRAM where available
-- Missing per-process GPU utilization is shown as `-`, never fabricated as `0%`
+Starting with v0.2.3, Ubuntu x86_64 users can install proc-lens from the `.deb` attached to the matching GitHub Release. Rust and Cargo are **not** required at runtime.
+
+```bash
+sudo apt install ./proc-lens_0.2.3-1_amd64.deb
+```
+
+After installation you can either run:
+
+```bash
+proc-lens
+```
+
+or open the Ubuntu application menu, search for **proc-lens**, and click the icon. The desktop entry uses `Terminal=true`, so Ubuntu opens a terminal directly into the existing TUI instead of wrapping proc-lens in a separate GUI.
+
+To uninstall:
+
+```bash
+sudo apt remove proc-lens
+```
+
+Developers can build the package locally with:
+
+```bash
+cargo install cargo-deb --locked
+./scripts/build-deb.sh
+```
+
+The generated package is validated before the script prints its path.
 
 ## Stable live view
 
-Sampling and ordering are intentionally separated so the table remains usable while CPU usage changes:
+- system/process data sampled every **1 second**
+- TUI process CPU smoothed with EMA `alpha = 0.35`
+- automatic reorder at most every **2 seconds**
+- selection anchored to PID instead of row number
+- search/filter changes preserve visual position
+- `Space` freezes the view; `r` performs one refresh while paused
 
-- process/system sampling: **1 second**
-- TUI process CPU smoothing: EMA with `alpha = 0.35`
-- CPU history key: `(pid, start_time_ticks)` to avoid PID-reuse contamination
-- automatic reordering: at most every **2 seconds**
-- CPU sorting: **2 percentage-point bands** to reduce row thrashing
-- selection: anchored to the **PID**, not the current row number
-- `Space`: pause/resume the complete view
-- `r`: perform one refresh while remaining paused
+## Direct classification and display provenance
 
-CLI `snapshot` keeps raw resource values, while TYPE/PROJECT use the same deterministic provenance resolver as the TUI.
-
-## Direct classification vs display provenance
-
-These are intentionally separate concepts.
-
-**Direct classification** answers what the current PID itself proves from executable, command line, selected environment, and cgroup evidence.
-
-**Display provenance** answers which meaningful parent application/project owns a generic child.
+Direct classification answers what a PID itself proves from executable, command line, environment, and cgroup evidence. Display provenance answers which meaningful Browser/DEV ancestor owns a generic child. Inherited ownership never replaces the current PID's direct evidence.
 
 Example:
 
 ```text
-firefox [direct BROWSER]
-└── Isolated Web Co [direct PROCESS]
-    -> display BROWSER / Firefox
+firefox (BROWSER)
+└── Isolated Web Co (direct PROCESS) -> display BROWSER / Firefox
 ```
 
-`inspect` therefore keeps the raw fact:
+## DEV project fallback
 
-```text
-Type       : PROCESS
-Confidence : low
-```
-
-and adds ownership separately:
-
-```text
-Provenance
-Owner PID   : 7326
-Owner       : firefox
-Display type: BROWSER
-Project     : Firefox
-```
-
-This keeps provenance useful without pretending inherited evidence belongs directly to the child PID.
-
-## DEV project semantics
-
-For a direct or inherited DEV process, PROJECT follows this precedence:
+Development PROJECT labels use this conservative order:
 
 ```text
 verified Git workspace
@@ -104,55 +91,20 @@ known development application family
 -
 ```
 
-Git discovery checks the current cwd and ancestor cwd values, walking at most 8 filesystem parents for a `.git` root. No `git` subprocess is spawned.
+Initial family labels include `VS Code`, `Rust`, `Clang`, and `Python`. A family label is not a guessed repository; a verified Git root always wins.
 
-The v0.2.2 fallback map is deliberately small:
+## Build from source
 
-```text
-code / code-insiders        -> VS Code
-rust-analyzer               -> Rust
-clangd                      -> Clang
-pyright-langserver / pylsp  -> Python
-```
-
-A family label is **not a guessed repository**. A VS Code GPU process serving multiple windows can therefore show `PROJECT = VS Code` instead of being incorrectly assigned to one arbitrary repository. A verified Git repository always wins over the family fallback.
-
-## Classification notes
-
-Direct evidence scores are accumulated by category; ties use:
-
-```text
-ROS2 > CONTAINER > SYSTEMD > DEV > BROWSER > PROCESS
-```
-
-Strong ROS 2 evidence—installed ROS 2 node path, `--ros-args`, current `ros2 launch/run`, or a `ros2 launch/run` ancestor—is protected from competing categories. Environment-only evidence such as `ROS_VERSION=2` and `AMENT_PREFIX_PATH` remains weak/score-based so Firefox or VS Code launched from a ROS-sourced shell is not automatically relabeled ROS2.
-
-For systemd, `user@<uid>.service` is treated as the per-user service manager rather than proof that every desktop process is SYSTEMD. Concrete units such as `todeskd.service`, `pulseaudio.service`, or `org.gnome.Shell@x11.service` can still correctly classify as SYSTEMD.
-
-See [`docs/classification.md`](docs/classification.md) for the complete rules.
-
-## Requirements
-
-- Linux; Ubuntu 22.04 / x86_64 is the first target
-- Rust **1.88 or newer**
-- optional NVIDIA driver exposing NVML for GPU metrics
-
-## Build
+Requirements: Linux, Rust 1.88+, optional NVIDIA/NVML for GPU metrics.
 
 ```bash
 cargo build --release
 ```
 
-CPU-only build without the NVIDIA provider:
+CPU-only build:
 
 ```bash
 cargo build --release --no-default-features
-```
-
-Binary:
-
-```text
-target/release/proc-lens
 ```
 
 ## Usage
@@ -165,8 +117,6 @@ proc-lens --type ros2
 proc-lens --type dev snapshot
 proc-lens --type browser snapshot
 ```
-
-Accepted type names include `ros2`, `docker`/`container`, `systemd`, `dev`, `browser`, and `process`.
 
 ## Keyboard controls
 
@@ -189,23 +139,19 @@ Accepted type names include `ros2`, `docker`/`container`, `systemd`, `dev`, `bro
 
 The top CPU gauge is **whole-system utilization**. Per-process CPU is a process-level metric and is not expected to sum directly to the top gauge on a multi-core machine.
 
-Global GPU utilization, memory, temperature, and power are read through NVML when available. Per-process VRAM is derived from active graphics/compute contexts. Per-process GPU utilization is optional because a driver may not report a fresh utilization sample for every PID; missing values remain `-`.
+Global GPU utilization, memory, temperature, and power are read through NVML when available. Per-process VRAM is derived from active graphics/compute contexts. Per-process GPU utilization is optional; missing values remain `-`.
 
 ## Verification
-
-Run the complete local verification chain:
 
 ```bash
 ./scripts/verify.sh
 ```
 
-It checks formatting, Clippy, all-feature tests, CPU-only tests, and a release build. GitHub Actions runs the same quality gates plus an MSRV check on Rust 1.88.
+It checks formatting, Clippy, all-feature tests, CPU-only tests, and a release build. GitHub Actions also checks Rust 1.88 and builds/validates the Ubuntu `.deb`.
 
-Performance goals remain **<1% idle CPU** and **<50 MiB RSS** on a typical workstation. These are acceptance targets, not published benchmark claims; measure them on the target machine before quoting numbers.
+## Scope of v0.2.3
 
-## Scope of v0.2.2
-
-v0.2.2 intentionally stops at inspection/provenance. It does **not** include process killing/renice, mouse control, grouped process-family views, historical graphs, persistent configuration, web/remote monitoring, Prometheus export, Docker lifecycle management, ROS graph/topic visualization, VS Code workspace-database inspection, log analysis, LLM-based classification, or cross-platform support.
+v0.2.3 is packaging-only: Debian package metadata, Ubuntu desktop launcher/icon, package validation, and GitHub Release artifact publishing. It does not add kill/renice, grouped family views, historical graphs, GUI wrappers, AppImage/Snap/Flatpak, ARM64 artifacts, or new runtime classification behavior.
 
 ---
 
@@ -213,140 +159,92 @@ v0.2.2 intentionally stops at inspection/provenance. It does **not** include pro
 
 ## 为什么做 proc-lens？
 
-`top`、`htop`、`btop` 已经非常擅长展示资源占用，但在机器人和开发工作站上，更难回答的往往不是“哪个 PID 占 CPU”，而是**这个 PID 到底属于谁**：
+`top`、`htop`、`btop` 很擅长显示资源占用，但在机器人/开发工作站上，更困难的问题往往是**进程来源和归属**：
 
-- 它是 ROS 2 节点、浏览器子进程、systemd 服务，还是开发工具？
+- 这个 PID 是 ROS 2 节点、浏览器子进程、systemd 服务，还是开发工具？
 - 它属于哪个 ROS 2 workspace 或 Git 项目？
-- `Isolated Web Co` 实际上是不是 Firefox 的子进程？
-- 某个 `code` 子进程能否确定属于具体仓库，还是只能确定属于 VS Code？
-- 在没有可靠证据时，工具能不能明确保持“不知道”，而不是为了填满界面去猜？
+- 一个名字很泛化的子进程究竟属于 Firefox、VS Code 还是别的应用？
+- 它消耗了多少 CPU、RAM、GPU 和 VRAM？
 
-`proc-lens` 的核心就是把低开销 `/proc` 采样、可解释的直接分类和独立的父进程 provenance 归属层组合起来。
+proc-lens 直接读取 `/proc`，使用可解释的直接分类规则，再通过父进程链补充保守的显示归属。
 
-## v0.2.2 主要特性
+## Ubuntu 软件包安装
 
-- **Linux 原生采集**：直接读取 `/proc`，采样循环不调用 `ps`、`pstree` 或 `nvidia-smi`
-- **稳定 TUI**：1 Hz 采样、CPU EMA 平滑、低频重排、PID 锚定选择、搜索、暂停和单次刷新
-- **可解释直接分类**：`ROS2`、`CONTAINER`、`SYSTEMD`、`DEV`、`BROWSER`、`PROCESS`
-- **父链 Provenance**：为 Generic 浏览器/开发子进程推断上层归属，但不修改当前 PID 的原始证据
-- **ROS 2 感知**：识别安装路径、`--ros-args`、`ros2 launch/run` 父链，并解析 workspace/package
-- **具体 systemd service 识别**：忽略 `user@<uid>.service` 这种用户 service manager 的泛化干扰
-- **Git 感知 DEV PROJECT**：从当前进程和父链 cwd 中寻找可验证仓库
-- **保守 DEV 应用族回退**：无法证明具体仓库时只显示应用族，不伪造项目名
-- **可选 NVIDIA NVML**：提供全局 GPU 信息和可获得的进程 VRAM
-- 无法得到进程 GPU 利用率时显示 `-`，不会伪造为 `0%`
+从 v0.2.3 开始，Ubuntu x86_64 用户可以直接下载对应 GitHub Release 中附带的 `.deb`，安装后**不需要 Rust 或 Cargo**。
+
+```bash
+sudo apt install ./proc-lens_0.2.3-1_amd64.deb
+```
+
+安装完成后可以直接执行：
+
+```bash
+proc-lens
+```
+
+也可以打开 Ubuntu 应用菜单，搜索 **proc-lens** 并点击图标。桌面启动器使用 `Terminal=true`，因此会自动打开终端并进入现有 TUI，而不是另外套一层 GUI。
+
+卸载：
+
+```bash
+sudo apt remove proc-lens
+```
+
+开发者本地构建 `.deb`：
+
+```bash
+cargo install cargo-deb --locked
+./scripts/build-deb.sh
+```
+
+脚本会先完成项目验证，再构建 `.deb`，校验包内路径/版本/架构，最后打印软件包路径。
 
 ## 稳定实时视图
 
-v0.2.x 将“采样”和“排序”分离，避免 CPU 轻微变化导致列表频繁跳动：
+- 系统/进程数据每 **1 秒**采样一次
+- TUI 进程 CPU 使用 `alpha = 0.35` 的 EMA 平滑
+- 自动重排最多每 **2 秒**一次
+- 选中状态锚定 PID，而不是表格行号
+- 搜索/过滤后尽量保留原来的视觉位置
+- `Space` 冻结整个视图；暂停时 `r` 只刷新一次
 
-- 系统/进程采样：**1 秒**
-- TUI 进程 CPU：EMA 平滑，`alpha = 0.35`
-- CPU 历史按 `(pid, start_time_ticks)` 保存，避免 PID 复用继承旧数据
-- 自动重排：最多约 **2 秒一次**
-- CPU 排序：使用 **2 个百分点分档**，同档进程尽量保持相对顺序
-- 选中状态：跟随 **PID**，而不是“第几行”
-- `Space`：冻结/恢复完整视图
-- 暂停时 `r`：只刷新一次，不自动恢复
+## 直接分类与显示归属
 
-CLI `snapshot` 的资源数值保持原始采样值，TYPE/PROJECT 则和 TUI 共用同一套确定性的 provenance resolver。
-
-## 直接分类与 Display Provenance
-
-这两层语义刻意分开。
-
-**Direct Classification（直接分类）**回答：当前 PID 自己的 executable、cmdline、环境变量和 cgroup 能证明什么。
-
-**Display Provenance（展示归属）**回答：一个 Generic 子进程属于哪个有意义的上层应用/项目。
+直接分类只回答“这个 PID 自己有哪些证据”；显示归属回答“Generic 子进程属于哪个有意义的 Browser/DEV 祖先进程”。继承得到的归属不会覆盖当前 PID 的直接分类证据。
 
 例如：
 
 ```text
-firefox [直接 BROWSER]
-└── Isolated Web Co [直接 PROCESS]
-    -> 展示 BROWSER / Firefox
+firefox (BROWSER)
+└── Isolated Web Co (直接 PROCESS) -> 显示 BROWSER / Firefox
 ```
 
-因此 `inspect` 仍然会保留：
+## DEV 项目标记回退
+
+开发进程的 PROJECT 按以下顺序解析：
 
 ```text
-Type       : PROCESS
-Confidence : low
-```
-
-同时单独增加：
-
-```text
-Provenance
-Owner PID   : 7326
-Owner       : firefox
-Display type: BROWSER
-Project     : Firefox
-```
-
-这样既能让主表好读，也不会把父进程证据假装成当前 PID 自己的证据。
-
-## DEV PROJECT 的语义
-
-直接或继承得到的 DEV 进程按以下优先级生成 PROJECT：
-
-```text
-可验证的 Git workspace
+已验证 Git workspace
     ↓ 没有
 已知开发应用族
     ↓ 没有
 -
 ```
 
-Git 项目推断会依次检查当前 cwd 和父链 cwd，每个 cwd 最多向上检查 8 层寻找 `.git`，不会启动额外 `git` 子进程。
+当前保守应用族包括 `VS Code`、`Rust`、`Clang`、`Python`。应用族不是猜测仓库；只要能验证 Git 根目录，就始终优先显示真实项目名。
 
-v0.2.2 只加入少量保守映射：
+## 源码构建
 
-```text
-code / code-insiders        -> VS Code
-rust-analyzer               -> Rust
-clangd                      -> Clang
-pyright-langserver / pylsp  -> Python
-```
-
-这里的应用族**不是猜测出来的仓库名**。例如一个同时服务多个 VS Code 窗口的 GPU process，cwd 只有 `/home/user` 时，可以显示 `PROJECT = VS Code`，但不会被强行归到某个任意仓库。只要存在真实 Git workspace，真实仓库名始终优先于 `VS Code`、`Rust`、`Clang` 或 `Python` 这类回退标签。
-
-## 分类规则要点
-
-直接证据按类别累计分数，通常由最高分胜出；同分优先级为：
-
-```text
-ROS2 > CONTAINER > SYSTEMD > DEV > BROWSER > PROCESS
-```
-
-ROS 2 的强证据——已安装节点路径、`--ros-args`、当前 `ros2 launch/run`、父链 `ros2 launch/run`——会被保护。仅有 `ROS_VERSION=2`、`AMENT_PREFIX_PATH` 这样的继承环境变量属于弱证据，因此从已经 source ROS 的终端启动 Firefox 或 VS Code，不会被自动误标成 ROS2。
-
-systemd 方面，`user@<uid>.service` 只是用户 service manager，不代表它下面所有桌面程序都是 SYSTEMD；`todeskd.service`、`pulseaudio.service`、`org.gnome.Shell@x11.service` 这类具体 unit 仍可以正确识别为 SYSTEMD。
-
-完整规则见 [`docs/classification.md`](docs/classification.md)。
-
-## 环境要求
-
-- Linux；首要目标环境为 Ubuntu 22.04 / x86_64
-- Rust **1.88 或更高版本**
-- GPU 监控可选；需要 NVIDIA 驱动暴露 NVML
-
-## 构建
+要求：Linux、Rust 1.88+；GPU 信息可选 NVIDIA/NVML。
 
 ```bash
 cargo build --release
 ```
 
-不启用 NVIDIA provider 的 CPU-only 构建：
+CPU-only：
 
 ```bash
 cargo build --release --no-default-features
-```
-
-生成文件：
-
-```text
-target/release/proc-lens
 ```
 
 ## 使用
@@ -360,50 +258,40 @@ proc-lens --type dev snapshot
 proc-lens --type browser snapshot
 ```
 
-TYPE 支持 `ros2`、`docker`/`container`、`systemd`、`dev`、`browser`、`process`。
-
 ## 快捷键
 
 | 按键 | 功能 |
 | --- | --- |
-| `j` / `↓` | 选择下一个进程 |
-| `k` / `↑` | 选择上一个进程 |
-| `PageDown` / `PageUp` | 翻一页 |
-| `Home` / `End` | 跳到首个 / 最后一个可见进程 |
+| `j` / `↓` | 下一个进程 |
+| `k` / `↑` | 上一个进程 |
+| `PageDown` / `PageUp` | 翻页 |
+| `Home` / `End` | 首行 / 末行 |
 | `Enter` | 查看当前 PID 详情 |
 | `/` | 搜索 command/type/project |
 | `Space` | 暂停 / 恢复 |
-| `r` | 暂停状态下单次刷新 |
+| `r` | 暂停时单次刷新 |
 | `t` | 切换进程树排序 |
-| `c` / `m` / `g` / `p` | 按 CPU / RAM / GPU / PID 排序 |
-| `?` | 显示 / 关闭帮助 |
+| `c` / `m` / `g` / `p` | CPU / RAM / GPU / PID 排序 |
+| `?` | 帮助 |
 | `q` / `Esc` | 返回 / 关闭 / 退出 |
 
-## CPU / GPU 数值说明
+## CPU / GPU 口径
 
-顶部 CPU Gauge 是**整机 CPU 利用率**；进程 CPU 是进程级指标，在多核机器上不能直接与顶部数值相加比较，因此单个进程 CPU 数值高于当前整机百分比并不天然矛盾。
+顶部 CPU 是**整机总体利用率**；单进程 CPU 是进程级指标，在多核机器上不能简单和顶部数值相加比较。
 
-NVML 可用时，GPU 区域显示全局利用率、显存、温度和功率等信息；进程 VRAM 来自活动 graphics/compute context。驱动不一定在每个刷新周期都为每个 PID 提供新鲜的进程 GPU utilization，因此缺失值坚持显示 `-`。
+全局 GPU 利用率、显存、温度和功耗在 NVML 可用时读取。单进程 VRAM 来自活跃 graphics/compute context；驱动没有提供新鲜单进程 GPU 利用率时继续显示 `-`，不会伪造 `0%`。
 
 ## 验证
-
-运行完整本地质量门：
 
 ```bash
 ./scripts/verify.sh
 ```
 
-该脚本检查格式、Clippy、全 feature 测试、CPU-only 测试和 release build。GitHub Actions 还会额外使用 Rust 1.88 验证最低支持版本。
+它会检查格式、Clippy、全特性测试、CPU-only 测试和 release build。GitHub Actions 还会检查 Rust 1.88，并构建/验证 Ubuntu `.deb`。
 
-当前性能目标仍是典型工作站上 **idle CPU <1%**、**RSS <50 MiB**。这是验收目标，不是已经发布的 benchmark 结论；正式引用前应在目标机器上实测。
+## v0.2.3 边界
 
-## v0.2.2 范围
-
-v0.2.2 在“进程检查 + 可解释 provenance”这里收口。本版本刻意**不**实现 kill/renice、鼠标交互、进程族折叠/聚合、历史曲线、持久配置、Web/远程监控、Prometheus、Docker 生命周期管理、ROS graph/topic 可视化、VS Code 内部 workspace 数据库解析、日志分析、LLM 分类和跨平台支持。
-
-后续功能应在新的版本/分支中单独设计，而不是继续向 v0.2.2 追加功能。
-
----
+v0.2.3 只负责包装发布：Debian metadata、Ubuntu 桌面启动器/图标、软件包验证、GitHub Release `.deb`。不在这一版加入 kill/renice、进程族聚合视图、历史曲线、GUI wrapper、AppImage/Snap/Flatpak、ARM64 产物或新的运行时分类规则。
 
 ## License / 许可证
 
