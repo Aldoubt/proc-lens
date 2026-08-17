@@ -263,6 +263,35 @@ impl PresentationModel {
     }
 }
 
+#[must_use]
+pub fn compact_command_label(process: &EnrichedProcess, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+
+    let mut parts = vec![process.snapshot.name.clone()];
+    for argument in process.snapshot.command.iter().skip(1).take(2) {
+        if !argument.is_empty() && !parts.iter().any(|part| part == argument) {
+            parts.push(argument.clone());
+        }
+    }
+
+    truncate_label(&parts.join(" "), max_chars)
+}
+
+fn truncate_label(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_owned();
+    }
+    if max_chars == 1 {
+        return "…".into();
+    }
+
+    let mut output: String = value.chars().take(max_chars - 1).collect();
+    output.push('…');
+    output
+}
+
 fn cpu_band(value: f32) -> i32 {
     (value / CPU_BAND_PERCENT).floor() as i32
 }
