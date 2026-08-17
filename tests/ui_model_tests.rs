@@ -58,7 +58,11 @@ fn cpu_ema_uses_alpha_point_35() {
     let mut state = UiState::default();
     let mut model = PresentationModel::new(first, &mut state);
 
-    model.integrate_snapshot(snapshot(vec![process(10, 100, 20.0, 100)]), &mut state, false);
+    model.integrate_snapshot(
+        snapshot(vec![process(10, 100, 20.0, 100)]),
+        &mut state,
+        false,
+    );
 
     assert!((model.smoothed_cpu_for_pid(10).unwrap() - 13.5).abs() < 0.001);
 }
@@ -69,14 +73,21 @@ fn pid_reuse_resets_cpu_smoothing() {
     let mut state = UiState::default();
     let mut model = PresentationModel::new(first, &mut state);
 
-    model.integrate_snapshot(snapshot(vec![process(10, 999, 5.0, 100)]), &mut state, false);
+    model.integrate_snapshot(
+        snapshot(vec![process(10, 999, 5.0, 100)]),
+        &mut state,
+        false,
+    );
 
     assert!((model.smoothed_cpu_for_pid(10).unwrap() - 5.0).abs() < 0.001);
 }
 
 #[test]
 fn selected_pid_survives_reorder() {
-    let first = snapshot(vec![process(10, 100, 20.0, 100), process(20, 200, 10.0, 200)]);
+    let first = snapshot(vec![
+        process(10, 100, 20.0, 100),
+        process(20, 200, 10.0, 200),
+    ]);
     let mut state = UiState {
         selected_pid: Some(20),
         ..UiState::default()
@@ -84,7 +95,10 @@ fn selected_pid_survives_reorder() {
     let mut model = PresentationModel::new(first, &mut state);
 
     model.integrate_snapshot(
-        snapshot(vec![process(10, 100, 1.0, 100), process(20, 200, 80.0, 200)]),
+        snapshot(vec![
+            process(10, 100, 1.0, 100),
+            process(20, 200, 80.0, 200),
+        ]),
         &mut state,
         true,
     );
@@ -108,7 +122,10 @@ fn selected_pid_exit_falls_back_to_closest_visual_row() {
     assert_eq!(model.selected_index(&state), Some(1));
 
     model.integrate_snapshot(
-        snapshot(vec![process(10, 100, 30.0, 100), process(30, 300, 10.0, 100)]),
+        snapshot(vec![
+            process(10, 100, 30.0, 100),
+            process(30, 300, 10.0, 100),
+        ]),
         &mut state,
         true,
     );
@@ -119,13 +136,19 @@ fn selected_pid_exit_falls_back_to_closest_visual_row() {
 
 #[test]
 fn cpu_band_preserves_previous_order_for_small_fluctuations() {
-    let first = snapshot(vec![process(10, 100, 11.6, 100), process(20, 200, 11.2, 100)]);
+    let first = snapshot(vec![
+        process(10, 100, 11.6, 100),
+        process(20, 200, 11.2, 100),
+    ]);
     let mut state = UiState::default();
     let mut model = PresentationModel::new(first, &mut state);
     assert_eq!(model.ordered_pids(&state), vec![10, 20]);
 
     model.integrate_snapshot(
-        snapshot(vec![process(10, 100, 10.8, 100), process(20, 200, 11.9, 100)]),
+        snapshot(vec![
+            process(10, 100, 10.8, 100),
+            process(20, 200, 11.9, 100),
+        ]),
         &mut state,
         true,
     );
@@ -135,7 +158,10 @@ fn cpu_band_preserves_previous_order_for_small_fluctuations() {
 
 #[test]
 fn sort_mode_change_can_force_immediate_reorder() {
-    let first = snapshot(vec![process(10, 100, 30.0, 100), process(20, 200, 10.0, 900)]);
+    let first = snapshot(vec![
+        process(10, 100, 30.0, 100),
+        process(20, 200, 10.0, 900),
+    ]);
     let mut state = UiState::default();
     let mut model = PresentationModel::new(first, &mut state);
     assert_eq!(model.ordered_pids(&state), vec![10, 20]);
