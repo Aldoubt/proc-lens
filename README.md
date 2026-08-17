@@ -38,6 +38,7 @@ v0.2 separates **sampling** from **ordering** so the table stays useful while pr
 - Automatic table reordering happens at most every **2 seconds**.
 - CPU sort uses **2 percentage-point bands**; processes inside the same band keep their previous relative order.
 - Selection is anchored to the **PID**, not the row number, so the highlight follows the same process when rows move.
+- Search/filter changes preserve the previous visual position when the selected PID is filtered out, instead of jumping unconditionally to the first result.
 - `Space` freezes the entire view. While paused, `r` performs one refresh without resuming. Press `Space` again to resume with an immediate refresh.
 
 CLI `snapshot` and `inspect` stay raw and deterministic; smoothing is a TUI-only presentation feature.
@@ -128,11 +129,13 @@ Accepted type names include `ros2`, `docker`/`container`, `systemd`, `dev`, `bro
 
 ## Classification
 
-Classification is deterministic and uses category precedence:
+Classification is deterministic. Evidence scores are summed per category; the highest accumulated score normally wins, while ties use this precedence:
 
 ```text
 ROS2 > CONTAINER > SYSTEMD > DEV > BROWSER > PROCESS
 ```
+
+Strong ROS2 provenance is protected from competing categories: an installed ROS2 node path, `--ros-args`, current `ros2 launch/run`, or an ancestor `ros2 launch/run` makes ROS2 the primary type. Environment-only evidence (`ROS_VERSION=2` and `AMENT_PREFIX_PATH`) remains score-based, so launching Code or Firefox from a ROS-sourced shell does not incorrectly relabel them as ROS2.
 
 A process detail view shows the evidence and accumulated score for its selected category, for example:
 
