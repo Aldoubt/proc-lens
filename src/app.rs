@@ -8,6 +8,7 @@ use crate::gpu::{GpuOverview, GpuProvider, GpuSample, default_provider};
 use crate::process::resolver::{ProjectIdentity, resolve_ros2_process};
 use crate::process::tree::{parent_chain, tree_order};
 use crate::process::{MemorySnapshot, ProcessSnapshot};
+use crate::provenance::{ProcessProvenance, resolve_all_provenance, resolve_process_provenance};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnrichedProcess {
@@ -193,18 +194,31 @@ pub fn merge_gpu_sample(snapshot: &mut AppSnapshot, sample: GpuSample) {
 }
 
 pub fn format_snapshot(snapshot: &AppSnapshot, filter: Option<ProcessType>) -> String {
-    let mut rows: Vec<&EnrichedProcess> = snapshot
+    let provenance = resolve_all_provenance(&snapshot.processes);
+    let mut rows: Vec<(&EnrichedProcess, &ProcessProvenance)> = snapshot
         .processes
         .iter()
-        .filter(|process| filter.is_none_or(|wanted| process.classification.process_type == wanted))
+        .filter_map(|process| {
+            let derived = provenance.get(&process.snapshot.identity)?;
+            filter
+                .is_none_or(|wanted| derived.process_type == wanted)
+                .then_some((process, derived))
+        })
         .collect();
     rows.sort_by(|left, right| {
         right
+            .0
             .snapshot
             .cpu_percent
-            .total_cmp(&left.snapshot.cpu_percent)
-            .then_with(|| right.snapshot.memory_bytes.cmp(&left.snapshot.memory_bytes))
-            .then_with(|| left.snapshot.pid.cmp(&right.snapshot.pid))
+            .total_cmp(&left.0.snapshot.cpu_percent)
+            .then_with(|| {
+                right
+                    .0
+                    .snapshot
+                    .memory_bytes
+                    .cmp(&left.0.snapshot.memory_bytes)
+            })
+            .then_with(|| left.0.snapshot.pid.cmp(&right.0.snapshot.pid))
     });
 
     let mut output = String::new();
@@ -240,12 +254,12 @@ pub fn format_snapshot(snapshot: &AppSnapshot, filter: Option<ProcessType>) -> S
         "PID", "TYPE", "PROJECT", "CPU%", "RAM", "GPU%", "VRAM", "COMMAND"
     ));
 
-    for process in rows {
+    for (process, derived) in rows {
         output.push_str(&format!(
             "{:<7} {:<10} {:<24} {:>7.1} {:>10} {:>7} {:>10}  {}\n",
             process.snapshot.pid,
-            process.classification.process_type,
-            truncate(&project_label(process), 24),
+            derived.process_type,
+            truncate(&derived.project_label, 24),
             process.snapshot.cpu_percent,
             format_bytes(process.snapshot.memory_bytes),
             process_gpu_label(process),
@@ -263,6 +277,7 @@ pub fn format_inspect(snapshot: &AppSnapshot, pid: i32) -> Option<String> {
         .processes
         .iter()
         .find(|process| process.snapshot.pid == pid)?;
+    let provenance = resolve_process_provenance(process, &snapshot.processes);
     let mut output = String::new();
 
     output.push_str("Process Analysis\n");
@@ -277,7 +292,7 @@ pub fn format_inspect(snapshot: &AppSnapshot, pid: i32) -> Option<String> {
         "Confidence : {}\n",
         process.classification.confidence
     ));
-    output.push_str(&format!("Project    : {}\n", project_label(process)));
+    output.push_str(&format!("Project    : {}\n", provenance.project_label));
     output.push_str(&format!(
         "CPU        : {:.1}%\n",
         process.snapshot.cpu_percent
@@ -345,6 +360,17 @@ pub fn format_inspect(snapshot: &AppSnapshot, pid: i32) -> Option<String> {
                 output.push_str(&format!("PID {parent_pid}: <exited or inaccessible>"));
             }
         }
+    }
+
+    if let Some(owner_pid) = provenance.owner_pid {
+        output.push_str("\n\nProvenance\n");
+        output.push_str(&format!("Owner PID   : {owner_pid}\n"));
+        output.push_str(&format!(
+            "Owner       : {}\n",
+            provenance.owner_name.as_deref().unwrap_or("-")
+        ));
+        output.push_str(&format!("Display type: {}\n", provenance.process_type));
+        output.push_str(&format!("Project     : {}", provenance.project_label));
     }
 
     if let Some(project) = &process.project {
@@ -420,6 +446,7 @@ fn development_project_label(process: &EnrichedProcess) -> Option<String> {
     }
     None
 }
+
 fn systemd_unit(process: &EnrichedProcess) -> Option<String> {
     process
         .snapshot
