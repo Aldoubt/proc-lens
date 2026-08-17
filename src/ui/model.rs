@@ -89,6 +89,14 @@ impl PresentationModel {
 
     pub fn reorder(&mut self, state: &mut UiState) {
         let previous_index = self.selected_index(state);
+        self.reorder_preserving_index(state, previous_index);
+    }
+
+    pub fn reorder_preserving_index(
+        &mut self,
+        state: &mut UiState,
+        previous_index: Option<usize>,
+    ) {
         self.sort_order(state);
         self.update_ranks();
         self.reconcile_selection(state, previous_index);
