@@ -11,3 +11,7 @@ grep -q '^Type=Application$' packaging/proc-lens.desktop
 grep -q '^Exec=proc-lens$' packaging/proc-lens.desktop
 grep -q '^Icon=proc-lens$' packaging/proc-lens.desktop
 grep -q '^Terminal=true$' packaging/proc-lens.desktop
+
+test -s packaging/icons/proc-lens.svg
+test -s packaging/icons/proc-lens.png
+file packaging/icons/proc-lens.png | grep -q 'PNG image data, 256 x 256'
