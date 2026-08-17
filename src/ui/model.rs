@@ -53,21 +53,15 @@ impl PresentationModel {
         &self.snapshot
     }
 
-    pub fn integrate_snapshot(
-        &mut self,
-        next: AppSnapshot,
-        state: &mut UiState,
-        reorder: bool,
-    ) {
+    pub fn integrate_snapshot(&mut self, next: AppSnapshot, state: &mut UiState, reorder: bool) {
         let previous_index = self.selected_index(state);
         let mut next_smoothed = HashMap::with_capacity(next.processes.len());
         for process in &next.processes {
             let identity = process.snapshot.identity;
             let raw = process.snapshot.cpu_percent;
-            let value = self
-                .smoothed_cpu
-                .get(&identity)
-                .map_or(raw, |previous| CPU_EMA_ALPHA * raw + (1.0 - CPU_EMA_ALPHA) * previous);
+            let value = self.smoothed_cpu.get(&identity).map_or(raw, |previous| {
+                CPU_EMA_ALPHA * raw + (1.0 - CPU_EMA_ALPHA) * previous
+            });
             next_smoothed.insert(identity, value);
         }
 
@@ -134,9 +128,7 @@ impl PresentationModel {
     #[must_use]
     pub fn smoothed_cpu_for_pid(&self, pid: i32) -> Option<f32> {
         let process = self.process_by_pid(pid)?;
-        self.smoothed_cpu
-            .get(&process.snapshot.identity)
-            .copied()
+        self.smoothed_cpu.get(&process.snapshot.identity).copied()
     }
 
     #[must_use]
@@ -197,8 +189,12 @@ impl PresentationModel {
         let smoothed_cpu = &self.smoothed_cpu;
         let processes = &self.snapshot.processes;
         self.ordered_pids.sort_by(|left_pid, right_pid| {
-            let left = processes.iter().find(|process| process.snapshot.pid == *left_pid);
-            let right = processes.iter().find(|process| process.snapshot.pid == *right_pid);
+            let left = processes
+                .iter()
+                .find(|process| process.snapshot.pid == *left_pid);
+            let right = processes
+                .iter()
+                .find(|process| process.snapshot.pid == *right_pid);
             let (Some(left), Some(right)) = (left, right) else {
                 return left_pid.cmp(right_pid);
             };
