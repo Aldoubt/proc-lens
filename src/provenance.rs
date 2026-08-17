@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use crate::app::{EnrichedProcess, project_label};
 use crate::classifier::ProcessType;
@@ -42,7 +43,8 @@ pub fn resolve_process_provenance(
                         process_type: ProcessType::Development,
                         owner_pid: Some(owner.snapshot.pid),
                         owner_name: Some(owner.snapshot.name.clone()),
-                        project_label: "-".into(),
+                        project_label: development_project_from_chain(process, processes)
+                            .unwrap_or_else(|| "-".into()),
                     };
                 }
                 ProcessType::Ros2
@@ -53,10 +55,14 @@ pub fn resolve_process_provenance(
         }
     }
 
-    let project = if direct_type == ProcessType::Browser {
-        browser_family_label(process).unwrap_or("-").to_owned()
-    } else {
-        project_label(process)
+    let project = match direct_type {
+        ProcessType::Browser => browser_family_label(process).unwrap_or("-").to_owned(),
+        ProcessType::Development => development_project_from_chain(process, processes)
+            .unwrap_or_else(|| project_label(process)),
+        ProcessType::Ros2
+        | ProcessType::Container
+        | ProcessType::Systemd
+        | ProcessType::Generic => project_label(process),
     };
 
     ProcessProvenance {
@@ -80,6 +86,51 @@ pub fn resolve_all_provenance(
             )
         })
         .collect()
+}
+
+fn development_project_from_chain(
+    process: &EnrichedProcess,
+    processes: &[EnrichedProcess],
+) -> Option<String> {
+    if let Some(project) = git_project_from_cwd(process.snapshot.cwd.as_deref()) {
+        return Some(project);
+    }
+
+    for parent_pid in &process.parent_chain {
+        let Some(parent) = processes
+            .iter()
+            .find(|candidate| candidate.snapshot.pid == *parent_pid)
+        else {
+            continue;
+        };
+        if let Some(project) = git_project_from_cwd(parent.snapshot.cwd.as_deref()) {
+            return Some(project);
+        }
+    }
+
+    None
+}
+
+fn git_project_from_cwd(cwd: Option<&Path>) -> Option<String> {
+    let mut current = cwd?;
+    for depth in 0..=8 {
+        match current.join(".git").try_exists() {
+            Ok(true) => {
+                return current
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned());
+            }
+            Ok(false) => {}
+            Err(_) => return None,
+        }
+
+        if depth == 8 {
+            break;
+        }
+        current = current.parent()?;
+    }
+
+    None
 }
 
 fn browser_family_label(process: &EnrichedProcess) -> Option<&'static str> {
