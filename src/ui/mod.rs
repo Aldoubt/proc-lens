@@ -166,12 +166,14 @@ fn handle_key(
         match key.code {
             KeyCode::Esc | KeyCode::Enter => state.search_active = false,
             KeyCode::Backspace => {
+                let previous_index = model.selected_index(state);
                 state.query.pop();
-                model.reorder(state);
+                model.reorder_preserving_index(state, previous_index);
             }
             KeyCode::Char(character) => {
+                let previous_index = model.selected_index(state);
                 state.query.push(character);
-                model.reorder(state);
+                model.reorder_preserving_index(state, previous_index);
             }
             _ => {}
         }
@@ -201,8 +203,9 @@ fn handle_key(
             if state.view == ViewMode::Detail {
                 state.back();
             } else if !state.query.is_empty() {
+                let previous_index = model.selected_index(state);
                 state.query.clear();
-                model.reorder(state);
+                model.reorder_preserving_index(state, previous_index);
             }
             InputAction::None
         }
