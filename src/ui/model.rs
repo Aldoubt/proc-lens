@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::app::{AppSnapshot, EnrichedProcess, SortMode, UiState, project_label};
+use crate::app::{AppSnapshot, EnrichedProcess, SortMode, UiState};
 use crate::process::ProcessIdentity;
+use crate::provenance::{ProcessProvenance, resolve_all_provenance};
 
 pub const CPU_EMA_ALPHA: f32 = 0.35;
 pub const CPU_BAND_PERCENT: f32 = 2.0;
@@ -9,12 +10,14 @@ pub const CPU_BAND_PERCENT: f32 = 2.0;
 #[derive(Debug, Clone, Copy)]
 pub struct PresentationRow<'a> {
     pub process: &'a EnrichedProcess,
+    pub provenance: &'a ProcessProvenance,
     pub cpu_percent: f32,
 }
 
 #[derive(Debug, Clone)]
 pub struct PresentationModel {
     snapshot: AppSnapshot,
+    provenance: HashMap<ProcessIdentity, ProcessProvenance>,
     smoothed_cpu: HashMap<ProcessIdentity, f32>,
     ordered_pids: Vec<i32>,
     previous_ranks: HashMap<i32, usize>,
@@ -23,6 +26,7 @@ pub struct PresentationModel {
 impl PresentationModel {
     #[must_use]
     pub fn new(snapshot: AppSnapshot, state: &mut UiState) -> Self {
+        let provenance = resolve_all_provenance(&snapshot.processes);
         let smoothed_cpu = snapshot
             .processes
             .iter()
@@ -40,6 +44,7 @@ impl PresentationModel {
             .collect();
         let mut model = Self {
             snapshot,
+            provenance,
             smoothed_cpu,
             ordered_pids,
             previous_ranks,
@@ -79,6 +84,7 @@ impl PresentationModel {
         }
 
         self.snapshot = next;
+        self.provenance = resolve_all_provenance(&self.snapshot.processes);
         self.smoothed_cpu = next_smoothed;
         if reorder {
             self.sort_order(state);
@@ -103,20 +109,28 @@ impl PresentationModel {
         let query = state.query.trim().to_ascii_lowercase();
         self.ordered_pids
             .iter()
-            .filter_map(|pid| self.process_by_pid(*pid))
-            .filter(|process| {
-                state
+            .filter_map(|pid| {
+                let process = self.process_by_pid(*pid)?;
+                let provenance = self.provenance.get(&process.snapshot.identity)?;
+                if !state
                     .process_type_filter
-                    .is_none_or(|wanted| process.classification.process_type == wanted)
-                    && (query.is_empty() || matches_query(process, &query))
-            })
-            .map(|process| PresentationRow {
-                process,
-                cpu_percent: self
-                    .smoothed_cpu
-                    .get(&process.snapshot.identity)
-                    .copied()
-                    .unwrap_or(process.snapshot.cpu_percent),
+                    .is_none_or(|wanted| provenance.process_type == wanted)
+                {
+                    return None;
+                }
+                if !query.is_empty() && !matches_query(process, provenance, &query) {
+                    return None;
+                }
+
+                Some(PresentationRow {
+                    process,
+                    provenance,
+                    cpu_percent: self
+                        .smoothed_cpu
+                        .get(&process.snapshot.identity)
+                        .copied()
+                        .unwrap_or(process.snapshot.cpu_percent),
+                })
             })
             .collect()
     }
@@ -283,9 +297,13 @@ pub fn compact_command_label(process: &EnrichedProcess, max_chars: usize) -> Str
     truncate_label(&parts.join(" "), max_chars)
 }
 
-fn truncate_label(value: &str, max_chars: usize) -> String {
+#[must_use]
+pub fn truncate_label(value: &str, max_chars: usize) -> String {
     if value.chars().count() <= max_chars {
         return value.to_owned();
+    }
+    if max_chars == 0 {
+        return String::new();
     }
     if max_chars == 1 {
         return "…".into();
@@ -300,20 +318,23 @@ fn cpu_band(value: f32) -> i32 {
     (value / CPU_BAND_PERCENT).floor() as i32
 }
 
-fn matches_query(process: &EnrichedProcess, query: &str) -> bool {
+fn matches_query(
+    process: &EnrichedProcess,
+    provenance: &ProcessProvenance,
+    query: &str,
+) -> bool {
     process.snapshot.name.to_ascii_lowercase().contains(query)
         || process
             .snapshot
             .command_line()
             .to_ascii_lowercase()
             .contains(query)
-        || process
-            .classification
+        || provenance
             .process_type
             .to_string()
             .to_ascii_lowercase()
             .contains(query)
-        || project_label(process).to_ascii_lowercase().contains(query)
+        || provenance.project_label.to_ascii_lowercase().contains(query)
 }
 
 fn gpu_sort_value(process: &EnrichedProcess) -> f32 {
