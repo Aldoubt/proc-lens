@@ -159,3 +159,82 @@ fn inherited_dev_project_uses_ancestor_cwd_git_root() {
 
     fs::remove_dir_all(root).expect("remove fixture");
 }
+
+#[test]
+fn direct_code_without_git_falls_back_to_vscode_family() {
+    let code = process(500, 1, "code", ProcessType::Development, vec![1]);
+    let processes = vec![code.clone()];
+
+    let provenance = resolve_process_provenance(&code, &processes);
+
+    assert_eq!(provenance.project_label, "VS Code");
+}
+
+#[test]
+fn generic_code_child_without_git_inherits_vscode_family() {
+    let code = process(510, 1, "code", ProcessType::Development, vec![1]);
+    let child = process(
+        511,
+        510,
+        "utility-process",
+        ProcessType::Generic,
+        vec![510, 1],
+    );
+    let processes = vec![code, child.clone()];
+
+    let provenance = resolve_process_provenance(&child, &processes);
+
+    assert_eq!(provenance.process_type, ProcessType::Development);
+    assert_eq!(provenance.project_label, "VS Code");
+}
+
+#[test]
+fn direct_rust_analyzer_without_git_falls_back_to_rust_family() {
+    let analyzer = process(
+        520,
+        1,
+        "rust-analyzer",
+        ProcessType::Development,
+        vec![1],
+    );
+    let processes = vec![analyzer.clone()];
+
+    let provenance = resolve_process_provenance(&analyzer, &processes);
+
+    assert_eq!(provenance.project_label, "Rust");
+}
+
+#[test]
+fn real_git_project_wins_over_dev_family_fallback() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("proc-lens-dev-family-{nonce}"));
+    let cwd = root.join("build");
+    fs::create_dir_all(root.join(".git")).expect("create git marker");
+    fs::create_dir_all(&cwd).expect("create cwd");
+
+    let mut clangd = process(530, 1, "clangd", ProcessType::Development, vec![1]);
+    clangd.snapshot.cwd = Some(cwd);
+    let processes = vec![clangd.clone()];
+
+    let provenance = resolve_process_provenance(&clangd, &processes);
+
+    assert_eq!(
+        provenance.project_label,
+        root.file_name().unwrap().to_string_lossy()
+    );
+
+    fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
+fn unknown_dev_without_git_remains_unknown() {
+    let tool = process(540, 1, "custom-dev-tool", ProcessType::Development, vec![1]);
+    let processes = vec![tool.clone()];
+
+    let provenance = resolve_process_provenance(&tool, &processes);
+
+    assert_eq!(provenance.project_label, "-");
+}
