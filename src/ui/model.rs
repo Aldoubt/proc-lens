@@ -318,11 +318,7 @@ fn cpu_band(value: f32) -> i32 {
     (value / CPU_BAND_PERCENT).floor() as i32
 }
 
-fn matches_query(
-    process: &EnrichedProcess,
-    provenance: &ProcessProvenance,
-    query: &str,
-) -> bool {
+fn matches_query(process: &EnrichedProcess, provenance: &ProcessProvenance, query: &str) -> bool {
     process.snapshot.name.to_ascii_lowercase().contains(query)
         || process
             .snapshot
@@ -334,7 +330,10 @@ fn matches_query(
             .to_string()
             .to_ascii_lowercase()
             .contains(query)
-        || provenance.project_label.to_ascii_lowercase().contains(query)
+        || provenance
+            .project_label
+            .to_ascii_lowercase()
+            .contains(query)
 }
 
 fn gpu_sort_value(process: &EnrichedProcess) -> f32 {
