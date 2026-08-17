@@ -190,13 +190,7 @@ fn generic_code_child_without_git_inherits_vscode_family() {
 
 #[test]
 fn direct_rust_analyzer_without_git_falls_back_to_rust_family() {
-    let analyzer = process(
-        520,
-        1,
-        "rust-analyzer",
-        ProcessType::Development,
-        vec![1],
-    );
+    let analyzer = process(520, 1, "rust-analyzer", ProcessType::Development, vec![1]);
     let processes = vec![analyzer.clone()];
 
     let provenance = resolve_process_provenance(&analyzer, &processes);
