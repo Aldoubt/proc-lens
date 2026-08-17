@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use proc_lens::app::{AppSnapshot, EnrichedProcess, SortMode, UiState};
 use proc_lens::classifier::{Classification, Confidence, ProcessType};
 use proc_lens::process::{MemorySnapshot, ProcessIdentity, ProcessSnapshot};
-use proc_lens::ui::model::{CPU_EMA_ALPHA, PresentationModel, compact_command_label};
+use proc_lens::ui::model::{
+    CPU_EMA_ALPHA, PresentationModel, compact_command_label, truncate_label,
+};
 
 fn process(pid: i32, start: u64, cpu: f32, ram: u64) -> EnrichedProcess {
     EnrichedProcess {
@@ -245,4 +247,41 @@ fn search_filter_falls_back_to_closest_previous_visual_row() {
 
     assert_eq!(state.selected_pid, Some(30));
     assert_eq!(model.selected_index(&state), Some(1));
+}
+
+#[test]
+fn browser_filter_keeps_generic_child_via_provenance() {
+    let mut browser = process(100, 1000, 5.0, 100);
+    browser.snapshot.name = "firefox".into();
+    browser.classification.process_type = ProcessType::Browser;
+    browser.classification.score = 80;
+
+    let mut child = process(101, 1001, 12.0, 200);
+    child.snapshot.ppid = 100;
+    child.snapshot.name = "Isolated Web Co".into();
+    child.snapshot.command = vec!["Isolated Web Co".into()];
+    child.parent_chain = vec![100, 1];
+
+    let mut state = UiState {
+        process_type_filter: Some(ProcessType::Browser),
+        ..UiState::default()
+    };
+    let model = PresentationModel::new(snapshot(vec![browser, child]), &mut state);
+    let rows = model.visible_rows(&state);
+    let child_row = rows
+        .iter()
+        .find(|row| row.process.snapshot.pid == 101)
+        .expect("inherited browser child remains visible");
+
+    assert_eq!(child_row.provenance.process_type, ProcessType::Browser);
+    assert_eq!(child_row.provenance.project_label, "Firefox");
+}
+
+#[test]
+fn fixed_width_label_uses_unicode_ellipsis() {
+    let rendered = truncate_label("org.gnome.Shell@x11.service", 24);
+
+    assert_eq!(rendered.chars().count(), 24);
+    assert!(rendered.ends_with('…'));
+    assert_eq!(truncate_label("Firefox", 24), "Firefox");
 }
