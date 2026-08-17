@@ -67,13 +67,7 @@ fn generic_firefox_child_inherits_browser_owner() {
 #[test]
 fn nearest_meaningful_ancestor_wins() {
     let browser = process(100, 1, "firefox", ProcessType::Browser, vec![1]);
-    let code = process(
-        110,
-        100,
-        "code",
-        ProcessType::Development,
-        vec![100, 1],
-    );
+    let code = process(110, 100, "code", ProcessType::Development, vec![100, 1]);
     let child = process(
         111,
         110,
