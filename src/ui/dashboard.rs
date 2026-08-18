@@ -59,7 +59,8 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
     frame.render_widget(title, title_area);
 
     let gpu_device = snapshot.gpu.as_ref().and_then(|gpu| gpu.devices.first());
-    let metric_areas = Layout::horizontal(metric_constraints(gpu_device.is_some())).split(metrics_area);
+    let metric_areas =
+        Layout::horizontal(metric_constraints(gpu_device.is_some())).split(metrics_area);
 
     let cpu = Gauge::default()
         .block(Block::default().borders(Borders::ALL).title("CPU"))
