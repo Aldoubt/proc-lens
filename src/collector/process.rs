@@ -144,16 +144,14 @@ impl ProcCollector {
                 && let Ok(raw_io) = parse_process_io(&io_text)
             {
                 let previous = self.previous_process_io.get(&identity).copied();
-                let read_bytes_per_second = previous.zip(io_elapsed).and_then(
-                    |(previous, elapsed)| {
+                let read_bytes_per_second =
+                    previous.zip(io_elapsed).and_then(|(previous, elapsed)| {
                         io_rate_bytes_per_second(previous.read_bytes, raw_io.read_bytes, elapsed)
-                    },
-                );
-                let write_bytes_per_second = previous.zip(io_elapsed).and_then(
-                    |(previous, elapsed)| {
+                    });
+                let write_bytes_per_second =
+                    previous.zip(io_elapsed).and_then(|(previous, elapsed)| {
                         io_rate_bytes_per_second(previous.write_bytes, raw_io.write_bytes, elapsed)
-                    },
-                );
+                    });
                 current_process_io.insert(identity, raw_io);
                 latest_process_io.insert(
                     identity,
