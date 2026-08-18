@@ -234,7 +234,8 @@ pub fn parse_process_io(input: &str) -> Result<RawProcessIo, ParseError> {
 
     Ok(RawProcessIo {
         read_bytes: read_bytes.ok_or_else(|| ParseError::new("process io missing read_bytes"))?,
-        write_bytes: write_bytes.ok_or_else(|| ParseError::new("process io missing write_bytes"))?,
+        write_bytes: write_bytes
+            .ok_or_else(|| ParseError::new("process io missing write_bytes"))?,
     })
 }
 
