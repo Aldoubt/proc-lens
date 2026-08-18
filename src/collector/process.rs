@@ -3,6 +3,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crate::collector::ParseError;
 use crate::collector::cpu::{
@@ -31,11 +32,28 @@ impl RawProcessStat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawProcessIo {
+    pub read_bytes: u64,
+    pub write_bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessIoSnapshot {
+    pub read_bytes: u64,
+    pub write_bytes: u64,
+    pub read_bytes_per_second: Option<u64>,
+    pub write_bytes_per_second: Option<u64>,
+}
+
 #[derive(Debug)]
 pub struct ProcCollector {
     proc_root: PathBuf,
     previous_system: Option<SystemCpuTicks>,
     previous_process_ticks: HashMap<ProcessIdentity, u64>,
+    previous_process_io: HashMap<ProcessIdentity, RawProcessIo>,
+    latest_process_io: HashMap<ProcessIdentity, ProcessIoSnapshot>,
+    previous_sample_at: Option<Instant>,
 }
 
 impl Default for ProcCollector {
@@ -51,10 +69,23 @@ impl ProcCollector {
             proc_root: proc_root.into(),
             previous_system: None,
             previous_process_ticks: HashMap::new(),
+            previous_process_io: HashMap::new(),
+            latest_process_io: HashMap::new(),
+            previous_sample_at: None,
         }
     }
 
+    #[must_use]
+    pub fn latest_process_io(&self) -> &HashMap<ProcessIdentity, ProcessIoSnapshot> {
+        &self.latest_process_io
+    }
+
     pub fn sample(&mut self) -> io::Result<SystemSnapshot> {
+        let sample_at = Instant::now();
+        let io_elapsed = self
+            .previous_sample_at
+            .map(|previous| sample_at.saturating_duration_since(previous));
+
         let stat_text = fs::read_to_string(self.proc_root.join("stat"))?;
         let system_ticks = parse_system_cpu_ticks(&stat_text).map_err(invalid_data)?;
         let mem_text = fs::read_to_string(self.proc_root.join("meminfo"))?;
@@ -63,6 +94,8 @@ impl ProcCollector {
 
         let mut processes = Vec::new();
         let mut current_ticks = HashMap::new();
+        let mut current_process_io = HashMap::new();
+        let mut latest_process_io = HashMap::new();
         let previous_system = self.previous_system;
 
         for entry in fs::read_dir(&self.proc_root)? {
@@ -106,6 +139,30 @@ impl ProcCollector {
                 .unwrap_or(0.0),
                 _ => 0.0,
             };
+
+            if let Ok(io_text) = fs::read_to_string(process_dir.join("io"))
+                && let Ok(raw_io) = parse_process_io(&io_text)
+            {
+                let previous = self.previous_process_io.get(&identity).copied();
+                let read_bytes_per_second =
+                    previous.zip(io_elapsed).and_then(|(previous, elapsed)| {
+                        io_rate_bytes_per_second(previous.read_bytes, raw_io.read_bytes, elapsed)
+                    });
+                let write_bytes_per_second =
+                    previous.zip(io_elapsed).and_then(|(previous, elapsed)| {
+                        io_rate_bytes_per_second(previous.write_bytes, raw_io.write_bytes, elapsed)
+                    });
+                current_process_io.insert(identity, raw_io);
+                latest_process_io.insert(
+                    identity,
+                    ProcessIoSnapshot {
+                        read_bytes: raw_io.read_bytes,
+                        write_bytes: raw_io.write_bytes,
+                        read_bytes_per_second,
+                        write_bytes_per_second,
+                    },
+                );
+            }
 
             let status = fs::read_to_string(process_dir.join("status")).ok();
             let memory_bytes = status
@@ -152,6 +209,9 @@ impl ProcCollector {
 
         self.previous_system = Some(system_ticks);
         self.previous_process_ticks = current_ticks;
+        self.previous_process_io = current_process_io;
+        self.latest_process_io = latest_process_io;
+        self.previous_sample_at = Some(sample_at);
 
         Ok(SystemSnapshot {
             cpu_percent,
@@ -204,6 +264,46 @@ pub fn parse_process_stat(input: &str) -> Result<RawProcessStat, ParseError> {
         vsize_bytes: parse_field(fields[20], 23)?,
         rss_pages: parse_field(fields[21], 24)?,
     })
+}
+
+pub fn parse_process_io(input: &str) -> Result<RawProcessIo, ParseError> {
+    let mut read_bytes = None;
+    let mut write_bytes = None;
+
+    for line in input.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let parsed = value
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| ParseError::new(format!("invalid process io field {key}")))?;
+        match key.trim() {
+            "read_bytes" => read_bytes = Some(parsed),
+            "write_bytes" => write_bytes = Some(parsed),
+            _ => {}
+        }
+    }
+
+    Ok(RawProcessIo {
+        read_bytes: read_bytes.ok_or_else(|| ParseError::new("process io missing read_bytes"))?,
+        write_bytes: write_bytes
+            .ok_or_else(|| ParseError::new("process io missing write_bytes"))?,
+    })
+}
+
+#[must_use]
+pub fn io_rate_bytes_per_second(previous: u64, current: u64, elapsed: Duration) -> Option<u64> {
+    if current < previous || elapsed.is_zero() {
+        return None;
+    }
+
+    let seconds = elapsed.as_secs_f64();
+    if seconds <= 0.0 {
+        return None;
+    }
+
+    Some(((current - previous) as f64 / seconds).round() as u64)
 }
 
 fn parse_field<T>(value: &str, field_number: usize) -> Result<T, ParseError>
