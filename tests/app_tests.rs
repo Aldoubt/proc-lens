@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -61,8 +61,10 @@ fn snapshot() -> AppSnapshot {
             total_bytes: 32 * 1024 * 1024 * 1024,
             available_bytes: 20 * 1024 * 1024 * 1024,
         },
+        storage: None,
         load_average: [1.0, 0.8, 0.6],
         gpu: None,
+        process_io: HashMap::new(),
         processes: vec![enriched()],
     }
 }
@@ -117,8 +119,10 @@ fn browser_child_snapshot() -> AppSnapshot {
             total_bytes: 32 * 1024 * 1024 * 1024,
             available_bytes: 20 * 1024 * 1024 * 1024,
         },
+        storage: None,
         load_average: [1.0, 0.8, 0.6],
         gpu: None,
+        process_io: HashMap::new(),
         processes: vec![parent, child],
     }
 }
