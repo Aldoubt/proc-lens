@@ -37,8 +37,5 @@ fn io_rate_is_unknown_when_counter_moves_backwards() {
 
 #[test]
 fn io_rate_is_unknown_for_zero_elapsed_time() {
-    assert_eq!(
-        io_rate_bytes_per_second(1_000, 2_000, Duration::ZERO),
-        None
-    );
+    assert_eq!(io_rate_bytes_per_second(1_000, 2_000, Duration::ZERO), None);
 }
