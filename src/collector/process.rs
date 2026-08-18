@@ -3,6 +3,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::collector::ParseError;
 use crate::collector::cpu::{
@@ -29,6 +30,12 @@ impl RawProcessStat {
     pub fn process_ticks(&self) -> u64 {
         self.utime_ticks.saturating_add(self.stime_ticks)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawProcessIo {
+    pub read_bytes: u64,
+    pub write_bytes: u64,
 }
 
 #[derive(Debug)]
@@ -204,6 +211,45 @@ pub fn parse_process_stat(input: &str) -> Result<RawProcessStat, ParseError> {
         vsize_bytes: parse_field(fields[20], 23)?,
         rss_pages: parse_field(fields[21], 24)?,
     })
+}
+
+pub fn parse_process_io(input: &str) -> Result<RawProcessIo, ParseError> {
+    let mut read_bytes = None;
+    let mut write_bytes = None;
+
+    for line in input.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let parsed = value
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| ParseError::new(format!("invalid process io field {key}")))?;
+        match key.trim() {
+            "read_bytes" => read_bytes = Some(parsed),
+            "write_bytes" => write_bytes = Some(parsed),
+            _ => {}
+        }
+    }
+
+    Ok(RawProcessIo {
+        read_bytes: read_bytes.ok_or_else(|| ParseError::new("process io missing read_bytes"))?,
+        write_bytes: write_bytes.ok_or_else(|| ParseError::new("process io missing write_bytes"))?,
+    })
+}
+
+#[must_use]
+pub fn io_rate_bytes_per_second(previous: u64, current: u64, elapsed: Duration) -> Option<u64> {
+    if current < previous || elapsed.is_zero() {
+        return None;
+    }
+
+    let seconds = elapsed.as_secs_f64();
+    if seconds <= 0.0 {
+        return None;
+    }
+
+    Some(((current - previous) as f64 / seconds).round() as u64)
 }
 
 fn parse_field<T>(value: &str, field_number: usize) -> Result<T, ParseError>
