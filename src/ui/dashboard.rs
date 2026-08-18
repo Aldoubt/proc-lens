@@ -225,3 +225,33 @@ fn sort_label(sort: SortMode) -> &'static str {
         SortMode::Pid => "pid",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::collector::storage::StorageSnapshot;
+
+    use super::{metric_constraints, storage_gauge_label};
+
+    #[test]
+    fn storage_gauge_label_shows_capacity_percent_and_available_space() {
+        let storage = StorageSnapshot {
+            target: PathBuf::from("/home/yangxuan"),
+            total_bytes: 1_000,
+            free_bytes: 100,
+            available_bytes: 80,
+        };
+
+        assert_eq!(
+            storage_gauge_label(&storage),
+            "900B / 1000B  90.0%  80B avail"
+        );
+    }
+
+    #[test]
+    fn metric_layout_always_reserves_a_disk_gauge() {
+        assert_eq!(metric_constraints(false).len(), 3);
+        assert_eq!(metric_constraints(true).len(), 4);
+    }
+}
