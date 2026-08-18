@@ -3,7 +3,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::collector::ParseError;
 use crate::collector::cpu::{
@@ -38,11 +38,22 @@ pub struct RawProcessIo {
     pub write_bytes: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessIoSnapshot {
+    pub read_bytes: u64,
+    pub write_bytes: u64,
+    pub read_bytes_per_second: Option<u64>,
+    pub write_bytes_per_second: Option<u64>,
+}
+
 #[derive(Debug)]
 pub struct ProcCollector {
     proc_root: PathBuf,
     previous_system: Option<SystemCpuTicks>,
     previous_process_ticks: HashMap<ProcessIdentity, u64>,
+    previous_process_io: HashMap<ProcessIdentity, RawProcessIo>,
+    latest_process_io: HashMap<ProcessIdentity, ProcessIoSnapshot>,
+    previous_sample_at: Option<Instant>,
 }
 
 impl Default for ProcCollector {
@@ -58,10 +69,23 @@ impl ProcCollector {
             proc_root: proc_root.into(),
             previous_system: None,
             previous_process_ticks: HashMap::new(),
+            previous_process_io: HashMap::new(),
+            latest_process_io: HashMap::new(),
+            previous_sample_at: None,
         }
     }
 
+    #[must_use]
+    pub fn latest_process_io(&self) -> &HashMap<ProcessIdentity, ProcessIoSnapshot> {
+        &self.latest_process_io
+    }
+
     pub fn sample(&mut self) -> io::Result<SystemSnapshot> {
+        let sample_at = Instant::now();
+        let io_elapsed = self
+            .previous_sample_at
+            .map(|previous| sample_at.saturating_duration_since(previous));
+
         let stat_text = fs::read_to_string(self.proc_root.join("stat"))?;
         let system_ticks = parse_system_cpu_ticks(&stat_text).map_err(invalid_data)?;
         let mem_text = fs::read_to_string(self.proc_root.join("meminfo"))?;
@@ -70,6 +94,8 @@ impl ProcCollector {
 
         let mut processes = Vec::new();
         let mut current_ticks = HashMap::new();
+        let mut current_process_io = HashMap::new();
+        let mut latest_process_io = HashMap::new();
         let previous_system = self.previous_system;
 
         for entry in fs::read_dir(&self.proc_root)? {
@@ -113,6 +139,32 @@ impl ProcCollector {
                 .unwrap_or(0.0),
                 _ => 0.0,
             };
+
+            if let Ok(io_text) = fs::read_to_string(process_dir.join("io"))
+                && let Ok(raw_io) = parse_process_io(&io_text)
+            {
+                let previous = self.previous_process_io.get(&identity).copied();
+                let read_bytes_per_second = previous.zip(io_elapsed).and_then(
+                    |(previous, elapsed)| {
+                        io_rate_bytes_per_second(previous.read_bytes, raw_io.read_bytes, elapsed)
+                    },
+                );
+                let write_bytes_per_second = previous.zip(io_elapsed).and_then(
+                    |(previous, elapsed)| {
+                        io_rate_bytes_per_second(previous.write_bytes, raw_io.write_bytes, elapsed)
+                    },
+                );
+                current_process_io.insert(identity, raw_io);
+                latest_process_io.insert(
+                    identity,
+                    ProcessIoSnapshot {
+                        read_bytes: raw_io.read_bytes,
+                        write_bytes: raw_io.write_bytes,
+                        read_bytes_per_second,
+                        write_bytes_per_second,
+                    },
+                );
+            }
 
             let status = fs::read_to_string(process_dir.join("status")).ok();
             let memory_bytes = status
@@ -159,6 +211,9 @@ impl ProcCollector {
 
         self.previous_system = Some(system_ticks);
         self.previous_process_ticks = current_ticks;
+        self.previous_process_io = current_process_io;
+        self.latest_process_io = latest_process_io;
+        self.previous_sample_at = Some(sample_at);
 
         Ok(SystemSnapshot {
             cpu_percent,
