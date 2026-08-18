@@ -3,11 +3,12 @@ use std::io;
 use std::path::Path;
 
 use crate::classifier::{Classification, ProcessType, classify, systemd_service_unit};
-use crate::collector::process::ProcCollector;
+use crate::collector::process::{ProcCollector, ProcessIoSnapshot};
+use crate::collector::storage::{StorageSnapshot, storage_for_home};
 use crate::gpu::{GpuOverview, GpuProvider, GpuSample, default_provider};
 use crate::process::resolver::{ProjectIdentity, resolve_ros2_process};
 use crate::process::tree::{parent_chain, tree_order};
-use crate::process::{MemorySnapshot, ProcessSnapshot};
+use crate::process::{MemorySnapshot, ProcessIdentity, ProcessSnapshot};
 use crate::provenance::{ProcessProvenance, resolve_all_provenance, resolve_process_provenance};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -24,8 +25,10 @@ pub struct EnrichedProcess {
 pub struct AppSnapshot {
     pub cpu_percent: f32,
     pub memory: MemorySnapshot,
+    pub storage: Option<StorageSnapshot>,
     pub load_average: [f32; 3],
     pub gpu: Option<GpuOverview>,
+    pub process_io: HashMap<ProcessIdentity, ProcessIoSnapshot>,
     pub processes: Vec<EnrichedProcess>,
 }
 
@@ -125,7 +128,10 @@ impl Inspector {
 
     pub fn refresh(&mut self) -> io::Result<AppSnapshot> {
         let system = self.collector.sample()?;
+        let process_io = self.collector.latest_process_io().clone();
         let mut snapshot = enrich(system);
+        snapshot.process_io = process_io;
+        snapshot.storage = storage_for_home().ok();
         if let Some(gpu_sample) = self.gpu_provider.sample() {
             merge_gpu_sample(&mut snapshot, gpu_sample);
         }
@@ -176,8 +182,10 @@ fn enrich(system: crate::process::SystemSnapshot) -> AppSnapshot {
     AppSnapshot {
         cpu_percent: system.cpu_percent,
         memory: system.memory,
+        storage: None,
         load_average: system.load_average,
         gpu: None,
+        process_io: HashMap::new(),
         processes,
     }
 }
@@ -231,6 +239,15 @@ pub fn format_snapshot(snapshot: &AppSnapshot, filter: Option<ProcessType>) -> S
         snapshot.load_average[1],
         snapshot.load_average[2],
     ));
+    if let Some(storage) = &snapshot.storage {
+        output.push_str(&format!(
+            "  DISK {} / {} ({:.1}%, {} avail)",
+            format_bytes(storage.used_bytes()),
+            format_bytes(storage.total_bytes),
+            storage.used_percent(),
+            format_bytes(storage.available_bytes)
+        ));
+    }
     if let Some(device) = snapshot.gpu.as_ref().and_then(|gpu| gpu.devices.first()) {
         output.push_str(&format!(
             "  GPU{} {}",
@@ -278,6 +295,7 @@ pub fn format_inspect(snapshot: &AppSnapshot, pid: i32) -> Option<String> {
         .iter()
         .find(|process| process.snapshot.pid == pid)?;
     let provenance = resolve_process_provenance(process, &snapshot.processes);
+    let process_io = snapshot.process_io.get(&process.snapshot.identity);
     let mut output = String::new();
 
     output.push_str("Process Analysis\n");
@@ -300,6 +318,32 @@ pub fn format_inspect(snapshot: &AppSnapshot, pid: i32) -> Option<String> {
     output.push_str(&format!(
         "RAM        : {}\n",
         format_bytes(process.snapshot.memory_bytes)
+    ));
+    output.push_str(&format!(
+        "Disk read  : {}\n",
+        process_io
+            .map(|io| format_bytes(io.read_bytes))
+            .unwrap_or_else(|| "-".into())
+    ));
+    output.push_str(&format!(
+        "Disk write : {}\n",
+        process_io
+            .map(|io| format_bytes(io.write_bytes))
+            .unwrap_or_else(|| "-".into())
+    ));
+    output.push_str(&format!(
+        "Read rate  : {}\n",
+        process_io
+            .and_then(|io| io.read_bytes_per_second)
+            .map(format_rate)
+            .unwrap_or_else(|| "-".into())
+    ));
+    output.push_str(&format!(
+        "Write rate : {}\n",
+        process_io
+            .and_then(|io| io.write_bytes_per_second)
+            .map(format_rate)
+            .unwrap_or_else(|| "-".into())
     ));
     output.push_str(&format!(
         "GPU        : {}\n",
@@ -491,6 +535,10 @@ pub fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{bytes}B")
     }
+}
+
+fn format_rate(bytes_per_second: u64) -> String {
+    format!("{}/s", format_bytes(bytes_per_second))
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {
