@@ -45,8 +45,10 @@ fn gpu_sample_merges_vram_without_inventing_utilization() {
             total_bytes: 16 * 1024 * 1024 * 1024,
             available_bytes: 8 * 1024 * 1024 * 1024,
         },
+        storage: None,
         load_average: [0.1, 0.2, 0.3],
         gpu: None,
+        process_io: HashMap::new(),
         processes: vec![process(42)],
     };
 
@@ -91,8 +93,10 @@ fn gpu_sample_does_not_attach_usage_to_unrelated_pid() {
             total_bytes: 1,
             available_bytes: 1,
         },
+        storage: None,
         load_average: [0.0, 0.0, 0.0],
         gpu: None,
+        process_io: HashMap::new(),
         processes: vec![process(42)],
     };
 
@@ -125,8 +129,10 @@ fn textual_snapshot_reports_global_gpu_and_process_vram_without_fake_gpu_percent
             total_bytes: 16 * 1024 * 1024 * 1024,
             available_bytes: 8 * 1024 * 1024 * 1024,
         },
+        storage: None,
         load_average: [0.1, 0.2, 0.3],
         gpu: None,
+        process_io: HashMap::new(),
         processes: vec![process(42)],
     };
     let mut processes = HashMap::new();
