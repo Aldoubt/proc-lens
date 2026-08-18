@@ -4,6 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Gauge, Paragraph, Row, Table, TableState, Wrap};
 
 use crate::app::{SortMode, UiState, ViewMode, format_bytes};
+use crate::collector::storage::StorageSnapshot;
 
 use super::model::{PresentationModel, compact_command_label, truncate_label};
 
@@ -58,17 +59,7 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
     frame.render_widget(title, title_area);
 
     let gpu_device = snapshot.gpu.as_ref().and_then(|gpu| gpu.devices.first());
-    let metric_areas = if gpu_device.is_some() {
-        Layout::horizontal([
-            Constraint::Percentage(33),
-            Constraint::Percentage(34),
-            Constraint::Percentage(33),
-        ])
-        .split(metrics_area)
-    } else {
-        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(metrics_area)
-    };
+    let metric_areas = Layout::horizontal(metric_constraints(gpu_device.is_some())).split(metrics_area);
 
     let cpu = Gauge::default()
         .block(Block::default().borders(Borders::ALL).title("CPU"))
@@ -85,6 +76,22 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
             format_bytes(snapshot.memory.total_bytes)
         ));
     frame.render_widget(memory, metric_areas[1]);
+
+    let disk_ratio = snapshot
+        .storage
+        .as_ref()
+        .map(|storage| (storage.used_percent() / 100.0).clamp(0.0, 1.0) as f64)
+        .unwrap_or(0.0);
+    let disk_label = snapshot
+        .storage
+        .as_ref()
+        .map(storage_gauge_label)
+        .unwrap_or_else(|| "unavailable".into());
+    let disk = Gauge::default()
+        .block(Block::default().borders(Borders::ALL).title("DISK $HOME"))
+        .ratio(disk_ratio)
+        .label(disk_label);
+    frame.render_widget(disk, metric_areas[2]);
 
     if let Some(device) = gpu_device {
         let ratio = device
@@ -113,7 +120,7 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
             )
             .ratio(ratio)
             .label(label);
-        frame.render_widget(gpu, metric_areas[2]);
+        frame.render_widget(gpu, metric_areas[3]);
     }
 
     let command_budget = usize::from(frame.area().width.saturating_sub(88)).max(20);
@@ -188,6 +195,33 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
     if state.help_open {
         render_help(frame);
     }
+}
+
+fn metric_constraints(has_gpu: bool) -> Vec<Constraint> {
+    if has_gpu {
+        vec![
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+        ]
+    } else {
+        vec![
+            Constraint::Percentage(33),
+            Constraint::Percentage(34),
+            Constraint::Percentage(33),
+        ]
+    }
+}
+
+fn storage_gauge_label(storage: &StorageSnapshot) -> String {
+    format!(
+        "{} / {}  {:.1}%  {} avail",
+        format_bytes(storage.used_bytes()),
+        format_bytes(storage.total_bytes),
+        storage.used_percent(),
+        format_bytes(storage.available_bytes)
+    )
 }
 
 fn render_help(frame: &mut Frame) {
