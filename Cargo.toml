@@ -1,6 +1,6 @@
 [package]
 name = "proc-lens"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 rust-version = "1.88"
 description = "A lightweight Linux process inspector focused on provenance and project-aware classification"
@@ -28,7 +28,7 @@ license-file = ["LICENSE", "0"]
 section = "utils"
 priority = "optional"
 depends = "$auto"
-extended-description = "proc-lens is a lightweight Linux process inspector focused on process provenance, project-aware classification, ROS 2 development workflows, and CPU/RAM/GPU resource inspection."
+extended-description = "proc-lens is a lightweight Linux process inspector focused on process provenance, project-aware classification, ROS 2 development workflows, and CPU/RAM/GPU/storage resource inspection."
 assets = [
     ["target/release/proc-lens", "usr/bin/", "755"],
     ["packaging/proc-lens.desktop", "usr/share/applications/proc-lens.desktop", "644"],
