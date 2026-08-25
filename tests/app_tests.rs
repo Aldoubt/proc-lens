@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,6 +7,7 @@ use proc_lens::app::{
     AppSnapshot, EnrichedProcess, format_inspect, format_snapshot, project_label,
 };
 use proc_lens::classifier::{Classification, Confidence, Evidence, ProcessType};
+use proc_lens::collector::process::ProcessIoSnapshot;
 use proc_lens::process::{MemorySnapshot, ProcessIdentity, ProcessSnapshot, ProjectIdentity};
 
 fn enriched() -> EnrichedProcess {
@@ -60,8 +61,10 @@ fn snapshot() -> AppSnapshot {
             total_bytes: 32 * 1024 * 1024 * 1024,
             available_bytes: 20 * 1024 * 1024 * 1024,
         },
+        storage: None,
         load_average: [1.0, 0.8, 0.6],
         gpu: None,
+        process_io: HashMap::new(),
         processes: vec![enriched()],
     }
 }
@@ -116,8 +119,10 @@ fn browser_child_snapshot() -> AppSnapshot {
             total_bytes: 32 * 1024 * 1024 * 1024,
             available_bytes: 20 * 1024 * 1024 * 1024,
         },
+        storage: None,
         load_average: [1.0, 0.8, 0.6],
         gpu: None,
+        process_io: HashMap::new(),
         processes: vec![parent, child],
     }
 }
@@ -162,6 +167,32 @@ fn cli_inspect_explains_provenance_and_evidence() {
     assert!(output.contains("Parent chain"));
     assert!(output.contains("100 -> 1"));
     assert!(output.contains("command contains --ros-args"));
+}
+
+#[test]
+fn cli_inspect_reports_process_disk_io_and_rates() {
+    let mut snapshot = snapshot();
+    let identity = snapshot.processes[0].snapshot.identity;
+    snapshot.process_io.insert(
+        identity,
+        ProcessIoSnapshot {
+            read_bytes: 8 * 1024 * 1024,
+            write_bytes: 32 * 1024 * 1024,
+            read_bytes_per_second: Some(512 * 1024),
+            write_bytes_per_second: Some(2 * 1024 * 1024),
+        },
+    );
+
+    let output = format_inspect(&snapshot, 18452).expect("pid exists");
+
+    assert!(output.contains("Disk read"));
+    assert!(output.contains("8.0M"));
+    assert!(output.contains("Disk write"));
+    assert!(output.contains("32.0M"));
+    assert!(output.contains("Read rate"));
+    assert!(output.contains("512.0K/s"));
+    assert!(output.contains("Write rate"));
+    assert!(output.contains("2.0M/s"));
 }
 
 #[test]

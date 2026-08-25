@@ -12,15 +12,21 @@ if ! command -v cargo-deb >/dev/null 2>&1; then
   exit 1
 fi
 
+version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n1)"
+if [ -z "$version" ]; then
+  echo "failed to read package version from Cargo.toml" >&2
+  exit 1
+fi
+expected="proc-lens_${version}-1_amd64.deb"
+
 cargo deb
 
 mapfile -t packages < <(
-  find target/debian -maxdepth 1 -type f \
-    -name 'proc-lens_0.2.3-1_amd64.deb' -print
+  find target/debian -maxdepth 1 -type f -name "$expected" -print
 )
 
 if [ "${#packages[@]}" -ne 1 ]; then
-  printf 'expected exactly one proc-lens_0.2.3-1_amd64.deb, found %s\n' "${#packages[@]}" >&2
+  printf 'expected exactly one %s, found %s\n' "$expected" "${#packages[@]}" >&2
   exit 1
 fi
 

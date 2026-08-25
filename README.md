@@ -2,16 +2,16 @@
 
 [English](#english) · [中文](#中文)
 
-`proc-lens` is a lightweight Linux process inspector for understanding **what a process is, who launched it, which application/project it belongs to, and what resources it is consuming**.
+`proc-lens` is a lightweight Linux process inspector for understanding **what a process is, who launched it, which application/project it belongs to, and what CPU/RAM/GPU/storage resources it is consuming**.
 
-`proc-lens` 是一个轻量级 Linux 进程检查工具，重点回答：**这个进程是什么、由谁启动、属于哪个应用/项目，以及正在消耗多少资源**。
+`proc-lens` 是一个轻量级 Linux 进程检查工具，重点回答：**这个进程是什么、由谁启动、属于哪个应用/项目，以及正在消耗多少 CPU/RAM/GPU/存储资源**。
 
 <p align="center">
   <img src="docs/assets/proc-lens-v0.2.2-tui.png" alt="proc-lens TUI" width="900">
 </p>
 
-> Screenshot captured from a real Ubuntu workstation. Values are machine/runtime dependent.  
-> 截图来自真实 Ubuntu 工作站；资源数值会随机器和运行状态变化。
+> Screenshot captured from a real Ubuntu workstation on the v0.2.x line. v0.2.4 adds a `DISK $HOME` gauge to the top resource row. Values are machine/runtime dependent.  
+> 截图来自真实 Ubuntu 工作站的 v0.2.x 版本；v0.2.4 会在顶部资源区新增 `DISK $HOME` Gauge。资源数值会随机器和运行状态变化。
 
 ---
 
@@ -25,6 +25,7 @@ Tools such as `top`, `htop`, and `btop` are excellent at showing resource usage,
 - Which ROS 2 workspace or Git project does it belong to?
 - Is `Isolated Web Co` actually part of Firefox?
 - Is a `code` subprocess tied to a repository, or only to the VS Code application family?
+- Is storage getting full while a background recording/build task is writing heavily?
 - Can the answer remain deterministic and inspectable rather than being guessed?
 
 `proc-lens` combines direct `/proc` sampling with deterministic classification and a separate parent-chain provenance layer.
@@ -39,12 +40,15 @@ Tools such as `top`, `htop`, and `btop` are excellent at showing resource usage,
 - **Concrete systemd unit detection** while ignoring `user@<uid>.service` as generic desktop-service-manager evidence
 - **Git-aware DEV project labels** from current/ancestor cwd values
 - **Conservative DEV family fallback** when no repository can be proven
+- **Storage awareness**: a `DISK $HOME` capacity gauge plus per-process cumulative disk I/O and sampled read/write rates in `inspect`
 - **Optional NVIDIA NVML support** for global GPU state and per-process VRAM where available
-- Missing per-process GPU utilization is shown as `-`, never fabricated as `0%`
+- Missing per-process GPU utilization or inaccessible per-process I/O is shown as `-`, never fabricated as `0`
 
-## Ubuntu package installation — v0.2.3
+## Ubuntu package installation
 
-v0.2.3 adds Ubuntu packaging without changing the runtime/TUI behavior. Ubuntu 22.04+ x86_64 users can download the `.deb` attached to the `v0.2.3` GitHub Release and install it directly. Rust and Cargo are **not required at runtime**.
+Ubuntu 22.04+ x86_64 users can install the `.deb` attached to a GitHub Release. Rust and Cargo are **not required at runtime**.
+
+For the published v0.2.3 package:
 
 ```bash
 sudo apt install ./proc-lens_0.2.3-1_amd64.deb
@@ -79,13 +83,49 @@ cargo install cargo-deb --locked --version 3.7.0
 ./scripts/build-deb.sh
 ```
 
-Expected output:
+The output filename is derived from `Cargo.toml`; for the current v0.2.4 source tree it is:
 
 ```text
-target/debian/proc-lens_0.2.3-1_amd64.deb
+target/debian/proc-lens_0.2.4-1_amd64.deb
 ```
 
-`build-deb.sh` runs the normal project verification, builds with `cargo-deb`, and validates package name/version/architecture plus the installed binary, desktop entry, SVG/PNG icons, README, and LICENSE with `dpkg-deb`.
+`build-deb.sh` runs the normal project verification, builds with `cargo-deb`, and validates package name/version/architecture plus the installed binary, desktop entry, SVG/PNG icons, README, and LICENSE with `dpkg-deb`. The tag-triggered release workflow derives the asset name from the same Cargo version, so release packaging no longer hard-codes a previous version.
+
+## Storage awareness — v0.2.4
+
+The top resource row now includes:
+
+```text
+CPU | RAM | DISK $HOME | GPU   # when NVML/GPU is available
+CPU | RAM | DISK $HOME         # otherwise
+```
+
+`DISK $HOME` describes the **filesystem backing `$HOME`**, not the recursive size of the home directory. The collector uses Linux `statvfs` and reports:
+
+```text
+used / total   used%   available
+```
+
+`used` is derived from total filesystem blocks minus free blocks; `available` is the space available to an unprivileged process. This keeps the gauge meaningful when `$HOME` is on a separate partition and avoids expensive directory scans.
+
+Process detail also includes:
+
+```text
+Disk read
+Disk write
+Read rate
+Write rate
+```
+
+These values come from `/proc/<pid>/io`:
+
+- cumulative I/O uses `read_bytes` / `write_bytes`, which represent actual storage-layer bytes rather than generic syscall character counts such as `rchar` / `wchar`
+- rates are deltas divided by elapsed wall-clock sample time
+- history is keyed by `(pid, start_time_ticks)` so PID reuse cannot inherit an older process's I/O history
+- the first sample has cumulative values but no invented rate
+- a counter rollback or inaccessible `/proc/<pid>/io` is represented as unknown (`-`)
+
+I/O columns are intentionally **not** added to the main process table in v0.2.4, keeping the default TUI compact. Directory-size scanning, cleanup/deletion, and SMART/NVMe health monitoring remain out of scope.
 
 ## Stable live view
 
@@ -234,11 +274,13 @@ Accepted type names include `ros2`, `docker`/`container`, `systemd`, `dev`, `bro
 | `?` | Toggle help |
 | `q` / `Esc` | Back / close / quit |
 
-## CPU and GPU semantics
+## CPU, GPU, and storage semantics
 
 The top CPU gauge is **whole-system utilization**. Per-process CPU is a process-level metric and is not expected to sum directly to the top gauge on a multi-core machine.
 
 Global GPU utilization, memory, temperature, and power are read through NVML when available. Per-process VRAM is derived from active graphics/compute contexts. Per-process GPU utilization is optional because a driver may not report a fresh utilization sample for every PID; missing values remain `-`.
+
+The disk gauge is a filesystem-capacity metric, not disk bandwidth. Per-process `read_bytes`/`write_bytes` rates answer which processes are causing storage I/O; they do not represent filesystem capacity or directory size. Some kernel/security configurations may deny access to another process's `/proc/<pid>/io`, in which case proc-lens leaves the value unknown.
 
 ## Verification
 
@@ -250,11 +292,11 @@ Run the complete local verification chain:
 
 It checks formatting, Clippy, all-feature tests, CPU-only tests, and a release build. GitHub Actions adds an MSRV check on Rust 1.88 plus a real Ubuntu `.deb` build/validation job.
 
-Performance goals remain **<1% idle CPU** and **<50 MiB RSS** on a typical workstation. These are acceptance targets, not published benchmark claims; measure them on the target machine before quoting numbers.
+Performance goals remain **<1% idle CPU** and **<50 MiB RSS** on a typical workstation. These are acceptance targets, not published benchmark claims; measure them on the target machine before quoting numbers. v0.2.4 adds one `statvfs` sample and `/proc/<pid>/io` reads, so the same performance targets must be re-measured on the target workstation rather than assumed.
 
-## Scope of v0.2.3
+## Scope of v0.2.4
 
-v0.2.3 is **packaging-only**. It adds cargo-deb metadata, an Ubuntu desktop launcher, SVG/PNG icons, deterministic `.deb` validation, and tag-triggered GitHub Release publishing. It intentionally does **not** add process killing/renice, mouse control, grouped process-family views, historical graphs, persistent configuration, web/remote monitoring, Prometheus export, Docker lifecycle management, ROS graph/topic visualization, VS Code workspace-database inspection, log analysis, LLM classification, AppImage/Snap/Flatpak, ARM64 release artifacts, GUI wrappers, or new runtime classification behavior.
+v0.2.4 adds **storage awareness** without turning proc-lens into a disk-management application: `$HOME` filesystem capacity is visible in the top resource row, and `inspect` exposes cumulative process disk reads/writes plus sampled rates. Packaging is made version-derived so future `.deb` releases do not hard-code v0.2.3. It intentionally does **not** add main-table I/O columns, recursive directory scans, file cleanup/deletion, SMART/NVMe health monitoring, process killing/renice, mouse control, grouped process-family views, historical graphs, persistent configuration, web/remote monitoring, Prometheus export, Docker lifecycle management, ROS graph/topic visualization, VS Code workspace-database inspection, log analysis, LLM classification, AppImage/Snap/Flatpak, ARM64 release artifacts, or a GUI wrapper.
 
 ---
 
@@ -268,6 +310,7 @@ v0.2.3 is **packaging-only**. It adds cargo-deb metadata, an Ubuntu desktop laun
 - 它属于哪个 ROS 2 workspace 或 Git 项目？
 - `Isolated Web Co` 实际上是不是 Firefox 的子进程？
 - 某个 `code` 子进程能否确定属于具体仓库，还是只能确定属于 VS Code？
+- 后台录包、构建或多任务运行时，磁盘是不是快满了、哪个进程正在持续读写？
 - 在没有可靠证据时，工具能不能明确保持“不知道”，而不是为了填满界面去猜？
 
 `proc-lens` 的核心就是把低开销 `/proc` 采样、可解释的直接分类和独立的父进程 provenance 归属层组合起来。
@@ -282,12 +325,15 @@ v0.2.3 is **packaging-only**. It adds cargo-deb metadata, an Ubuntu desktop laun
 - **具体 systemd service 识别**：忽略 `user@<uid>.service` 这种用户 service manager 的泛化干扰
 - **Git 感知 DEV PROJECT**：从当前进程和父链 cwd 中寻找可验证仓库
 - **保守 DEV 应用族回退**：无法证明具体仓库时只显示应用族，不伪造项目名
+- **存储感知**：顶部增加 `DISK $HOME` 容量 Gauge，`inspect` 增加进程累计磁盘 I/O 和读写速率
 - **可选 NVIDIA NVML**：提供全局 GPU 信息和可获得的进程 VRAM
-- 无法得到进程 GPU 利用率时显示 `-`，不会伪造为 `0%`
+- 无法得到进程 GPU 利用率或无权限读取进程 I/O 时显示 `-`，不会伪造为 `0`
 
-## Ubuntu 软件包安装 — v0.2.3
+## Ubuntu 软件包安装
 
-v0.2.3 只增加 Ubuntu 打包和发布链路，不改变现有 TUI/运行时行为。Ubuntu 22.04+ x86_64 用户可以下载 `v0.2.3` GitHub Release 中的 `.deb` 直接安装，运行时**不需要 Rust 或 Cargo**。
+Ubuntu 22.04+ x86_64 用户可以下载 GitHub Release 中的 `.deb` 直接安装，运行时**不需要 Rust 或 Cargo**。
+
+已发布的 v0.2.3 软件包示例：
 
 ```bash
 sudo apt install ./proc-lens_0.2.3-1_amd64.deb
@@ -322,13 +368,49 @@ cargo install cargo-deb --locked --version 3.7.0
 ./scripts/build-deb.sh
 ```
 
-预期生成：
+软件包名称现在从 `Cargo.toml` 自动读取；当前 v0.2.4 源码会生成：
 
 ```text
-target/debian/proc-lens_0.2.3-1_amd64.deb
+target/debian/proc-lens_0.2.4-1_amd64.deb
 ```
 
-`build-deb.sh` 会先运行原有质量门，再调用 `cargo-deb`，随后用 `dpkg-deb` 验证软件包名称/版本/架构，以及二进制、desktop entry、SVG/PNG 图标、README 和 LICENSE 是否真正进入包内。
+`build-deb.sh` 会先运行原有质量门，再调用 `cargo-deb`，随后用 `dpkg-deb` 验证软件包名称/版本/架构，以及二进制、desktop entry、SVG/PNG 图标、README 和 LICENSE 是否真正进入包内。tag 发布 workflow 也使用同一个 Cargo 版本生成 asset 名，不再把旧版本号硬编码在发布脚本中。
+
+## 存储感知 — v0.2.4
+
+顶部资源区现在固定包含：
+
+```text
+CPU | RAM | DISK $HOME | GPU   # NVML/GPU 可用时
+CPU | RAM | DISK $HOME         # 无 GPU 时
+```
+
+`DISK $HOME` 表示的是 **`$HOME` 所在文件系统的容量**，不是递归扫描 home 目录得到的目录大小。采集使用 Linux `statvfs`，显示：
+
+```text
+已用 / 总量   已用百分比   普通用户可用空间
+```
+
+已用空间按文件系统总块数减去 free blocks 计算，available 则使用普通非特权进程真正可用的空间。因此即使 `/home` 单独挂载在另一块分区上，Gauge 仍然会监控正确的文件系统，同时不需要昂贵的目录遍历。
+
+进程详情新增：
+
+```text
+Disk read
+Disk write
+Read rate
+Write rate
+```
+
+数据来自 `/proc/<pid>/io`：
+
+- 累计磁盘 I/O 使用 `read_bytes` / `write_bytes`，表示实际存储层读写字节，而不是 `rchar` / `wchar` 这类通用 syscall 字符计数
+- 速率用相邻采样的字节差除以真实 wall-clock 时间差
+- 历史按 `(pid, start_time_ticks)` 保存，PID 被复用时不会继承旧进程的 I/O
+- 第一次采样只显示累计值，速率保持未知，不制造假速率
+- 计数器倒退或 `/proc/<pid>/io` 无权限访问时显示 `-`
+
+v0.2.4 **不把 READ/s、WRITE/s 永久塞进主表**，避免挤压现有 TYPE/PROJECT/COMMAND；也不增加目录扫描、自动清理/删除、SMART/NVMe 健康监控。
 
 ## 稳定实时视图
 
@@ -477,11 +559,13 @@ TYPE 支持 `ros2`、`docker`/`container`、`systemd`、`dev`、`browser`、`pro
 | `?` | 显示 / 关闭帮助 |
 | `q` / `Esc` | 返回 / 关闭 / 退出 |
 
-## CPU / GPU 数值说明
+## CPU / GPU / 存储数值说明
 
 顶部 CPU Gauge 是**整机 CPU 利用率**；进程 CPU 是进程级指标，在多核机器上不能直接与顶部数值相加比较，因此单个进程 CPU 数值高于当前整机百分比并不天然矛盾。
 
 NVML 可用时，GPU 区域显示全局利用率、显存、温度和功率等信息；进程 VRAM 来自活动 graphics/compute context。驱动不一定在每个刷新周期都为每个 PID 提供新鲜的进程 GPU utilization，因此缺失值坚持显示 `-`。
+
+DISK Gauge 表示文件系统容量，不代表磁盘读写带宽；`inspect` 中的进程 `read_bytes/write_bytes` 及其速率则用来回答“哪个进程正在造成存储 I/O”，它们也不代表目录大小。部分内核/安全配置可能不允许读取其他进程的 `/proc/<pid>/io`，这种情况保持未知值而不是猜测。
 
 ## 验证
 
@@ -493,11 +577,11 @@ NVML 可用时，GPU 区域显示全局利用率、显存、温度和功率等�
 
 该脚本检查格式、Clippy、全 feature 测试、CPU-only 测试和 release build。GitHub Actions 还会额外使用 Rust 1.88 验证最低支持版本，并实际构建/校验 Ubuntu `.deb`。
 
-当前性能目标仍是典型工作站上 **idle CPU <1%**、**RSS <50 MiB**。这是验收目标，不是已经发布的 benchmark 结论；正式引用前应在目标机器上实测。
+当前性能目标仍是典型工作站上 **idle CPU <1%**、**RSS <50 MiB**。这是验收目标，不是已经发布的 benchmark 结论；正式引用前应在目标机器上实测。v0.2.4 新增一次 `statvfs` 与 `/proc/<pid>/io` 读取，因此同样需要在目标工作站重新实测，不能直接沿用旧版本性能结论。
 
-## v0.2.3 范围
+## v0.2.4 范围
 
-v0.2.3 是**纯打包版本**：增加 cargo-deb metadata、Ubuntu 桌面启动器、SVG/PNG 图标、确定性的 `.deb` 校验，以及 tag 触发的 GitHub Release 发布。它不加入 kill/renice、鼠标交互、进程族折叠/聚合、历史曲线、持久配置、Web/远程监控、Prometheus、Docker 生命周期管理、ROS graph/topic 可视化、VS Code 内部 workspace 数据库解析、日志分析、LLM 分类、AppImage/Snap/Flatpak、ARM64 release artifact、GUI wrapper 或新的运行时分类规则。
+v0.2.4 增加**存储感知**，但不会把 proc-lens 变成磁盘管理器：顶部显示 `$HOME` 所在文件系统容量，`inspect` 显示进程累计磁盘读写和采样速率；同时让 `.deb` 与 release asset 名称从 Cargo 版本动态生成，不再硬编码 v0.2.3。它不加入主表永久 READ/s/WRITE/s 列、递归目录扫描、文件清理/删除、SMART/NVMe 健康监控、kill/renice、鼠标交互、进程族折叠/聚合、历史曲线、持久配置、Web/远程监控、Prometheus、Docker 生命周期管理、ROS graph/topic 可视化、VS Code 内部 workspace 数据库解析、日志分析、LLM 分类、AppImage/Snap/Flatpak、ARM64 release artifact 或 GUI wrapper。
 
 ---
 

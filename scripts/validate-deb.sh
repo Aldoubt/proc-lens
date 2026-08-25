@@ -4,10 +4,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 pkg="${1:?usage: validate-deb.sh FILE.deb}"
+version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n1)"
+if [ -z "$version" ]; then
+  echo "failed to read package version from Cargo.toml" >&2
+  exit 1
+fi
 
 test -f "$pkg"
 test "$(dpkg-deb -f "$pkg" Package)" = "proc-lens"
-test "$(dpkg-deb -f "$pkg" Version)" = "0.2.3-1"
+test "$(dpkg-deb -f "$pkg" Version)" = "${version}-1"
 test "$(dpkg-deb -f "$pkg" Architecture)" = "amd64"
 
 contents="$(dpkg-deb -c "$pkg")"

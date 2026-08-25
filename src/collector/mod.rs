@@ -1,6 +1,7 @@
 pub mod cpu;
 pub mod memory;
 pub mod process;
+pub mod storage;
 
 use std::error::Error;
 use std::fmt::{Display, Formatter};

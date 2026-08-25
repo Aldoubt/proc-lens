@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use proc_lens::app::{AppSnapshot, EnrichedProcess, SortMode, UiState};
 use proc_lens::classifier::{Classification, Confidence, ProcessType};
@@ -46,8 +46,10 @@ fn snapshot(processes: Vec<EnrichedProcess>) -> AppSnapshot {
             total_bytes: 1024,
             available_bytes: 512,
         },
+        storage: None,
         load_average: [0.1, 0.2, 0.3],
         gpu: None,
+        process_io: HashMap::new(),
         processes,
     }
 }
