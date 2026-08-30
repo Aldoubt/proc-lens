@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
-use proc_lens::app::{AppSnapshot, EnrichedProcess, format_task, format_tasks};
+use proc_lens::app::{AppSnapshot, EnrichedProcess};
 use proc_lens::classifier::{Classification, Confidence, ProcessType};
 use proc_lens::process::{MemorySnapshot, ProcessIdentity, ProcessSnapshot};
-use proc_lens::task::TaskId;
+use proc_lens::task::{TaskId, format_task, format_tasks};
 
 fn process(pid: i32, start: u64, name: &str, cpu: f32, rss: u64) -> EnrichedProcess {
     EnrichedProcess {
