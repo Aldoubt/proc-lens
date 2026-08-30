@@ -10,6 +10,7 @@ use crate::process::resolver::{ProjectIdentity, resolve_ros2_process};
 use crate::process::tree::{parent_chain, tree_order};
 use crate::process::{MemorySnapshot, ProcessIdentity, ProcessSnapshot};
 use crate::provenance::{ProcessProvenance, resolve_all_provenance, resolve_process_provenance};
+use crate::task::TaskId;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnrichedProcess {
@@ -46,9 +47,17 @@ pub enum ViewMode {
     Detail,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityMode {
+    Process,
+    Task,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiState {
     pub selected_pid: Option<i32>,
+    pub selected_task_id: Option<TaskId>,
+    pub entity_mode: EntityMode,
     pub query: String,
     pub search_active: bool,
     pub process_type_filter: Option<ProcessType>,
@@ -63,6 +72,8 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             selected_pid: None,
+            selected_task_id: None,
+            entity_mode: EntityMode::Process,
             query: String::new(),
             search_active: false,
             process_type_filter: None,
@@ -77,13 +88,28 @@ impl Default for UiState {
 
 impl UiState {
     pub fn open_detail(&mut self) {
-        if self.selected_pid.is_some() {
+        let has_selection = match self.entity_mode {
+            EntityMode::Process => self.selected_pid.is_some(),
+            EntityMode::Task => self.selected_task_id.is_some(),
+        };
+        if has_selection {
             self.view = ViewMode::Detail;
         }
     }
 
     pub fn back(&mut self) {
         self.view = ViewMode::List;
+    }
+
+    pub fn toggle_entity_mode(&mut self) {
+        self.entity_mode = match self.entity_mode {
+            EntityMode::Process => EntityMode::Task,
+            EntityMode::Task => EntityMode::Process,
+        };
+        self.view = ViewMode::List;
+        if self.entity_mode == EntityMode::Task {
+            self.tree_mode = false;
+        }
     }
 }
 
