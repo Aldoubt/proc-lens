@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-grep -q '^version = "0.2.4"$' Cargo.toml
+grep -q '^version = "0.3.0"$' Cargo.toml
 grep -q '^\[package.metadata.deb\]$' Cargo.toml
 grep -q 'packaging/proc-lens.desktop' Cargo.toml
 
