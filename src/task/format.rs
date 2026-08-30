@@ -83,17 +83,21 @@ fn format_task_snapshot(snapshot: &AppSnapshot, task: &TaskSnapshot) -> String {
         "Write rate : {}\n",
         optional_rate(task.write_bytes_per_second)
     ));
-    output.push_str(&format!("VRAM       : {}\n", optional_bytes(task.vram_bytes)));
+    output.push_str(&format!(
+        "VRAM       : {}\n",
+        optional_bytes(task.vram_bytes)
+    ));
     output.push_str("\nMembers\n");
     output.push_str(&format!(
         "{:<7} {:<10} {:<24} {:>7} {:>10}  {}\n",
         "PID", "TYPE", "PROJECT", "CPU%", "RAM", "COMMAND"
     ));
 
-    let members_by_id: HashMap<ProcessIdentity, &EnrichedProcess> = members_for_task(task, snapshot)
-        .into_iter()
-        .map(|process| (process.snapshot.identity, process))
-        .collect();
+    let members_by_id: HashMap<ProcessIdentity, &EnrichedProcess> =
+        members_for_task(task, snapshot)
+            .into_iter()
+            .map(|process| (process.snapshot.identity, process))
+            .collect();
 
     for identity in &task.member_ids {
         let Some(process) = members_by_id.get(identity).copied() else {
