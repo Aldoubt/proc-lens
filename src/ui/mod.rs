@@ -265,7 +265,9 @@ fn handle_key(
             state.toggle_entity_mode();
             match state.entity_mode {
                 EntityMode::Process if state.selected_pid.is_none() => model.select_first(state),
-                EntityMode::Task if state.selected_task_id.is_none() => model.select_first_task(state),
+                EntityMode::Task if state.selected_task_id.is_none() => {
+                    model.select_first_task(state)
+                }
                 _ => {}
             }
             InputAction::None
