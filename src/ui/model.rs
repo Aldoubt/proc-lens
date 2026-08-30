@@ -123,7 +123,8 @@ impl PresentationModel {
                 });
             next_smoothed_task.insert(task.id.clone(), value);
         }
-        let live_task_ids: HashSet<TaskId> = next_tasks.iter().map(|task| task.id.clone()).collect();
+        let live_task_ids: HashSet<TaskId> =
+            next_tasks.iter().map(|task| task.id.clone()).collect();
         self.ordered_task_ids
             .retain(|id| live_task_ids.contains(id));
         let mut known_tasks: HashSet<TaskId> = self.ordered_task_ids.iter().cloned().collect();
