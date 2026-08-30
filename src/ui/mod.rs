@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 
-use crate::app::{Inspector, SortMode, UiState, ViewMode};
+use crate::app::{EntityMode, Inspector, SortMode, UiState, ViewMode};
 use crate::classifier::ProcessType;
 use model::PresentationModel;
 
@@ -156,6 +156,52 @@ fn terminal_page_size() -> usize {
         .unwrap_or(10)
 }
 
+fn current_selected_index(model: &PresentationModel, state: &UiState) -> Option<usize> {
+    match state.entity_mode {
+        EntityMode::Process => model.selected_index(state),
+        EntityMode::Task => model.selected_task_index(state),
+    }
+}
+
+fn reorder_current_preserving_index(
+    model: &mut PresentationModel,
+    state: &mut UiState,
+    previous_index: Option<usize>,
+) {
+    match state.entity_mode {
+        EntityMode::Process => model.reorder_preserving_index(state, previous_index),
+        EntityMode::Task => model.reorder_tasks_preserving_index(state, previous_index),
+    }
+}
+
+fn move_selection(model: &PresentationModel, state: &mut UiState, delta: isize) {
+    match state.entity_mode {
+        EntityMode::Process => model.move_selection(state, delta),
+        EntityMode::Task => model.move_task_selection(state, delta),
+    }
+}
+
+fn move_page(model: &PresentationModel, state: &mut UiState, page_size: usize, direction: isize) {
+    match state.entity_mode {
+        EntityMode::Process => model.move_page(state, page_size, direction),
+        EntityMode::Task => model.move_task_page(state, page_size, direction),
+    }
+}
+
+fn select_first(model: &PresentationModel, state: &mut UiState) {
+    match state.entity_mode {
+        EntityMode::Process => model.select_first(state),
+        EntityMode::Task => model.select_first_task(state),
+    }
+}
+
+fn select_last(model: &PresentationModel, state: &mut UiState) {
+    match state.entity_mode {
+        EntityMode::Process => model.select_last(state),
+        EntityMode::Task => model.select_last_task(state),
+    }
+}
+
 fn handle_key(
     state: &mut UiState,
     model: &mut PresentationModel,
@@ -166,14 +212,14 @@ fn handle_key(
         match key.code {
             KeyCode::Esc | KeyCode::Enter => state.search_active = false,
             KeyCode::Backspace => {
-                let previous_index = model.selected_index(state);
+                let previous_index = current_selected_index(model, state);
                 state.query.pop();
-                model.reorder_preserving_index(state, previous_index);
+                reorder_current_preserving_index(model, state, previous_index);
             }
             KeyCode::Char(character) => {
-                let previous_index = model.selected_index(state);
+                let previous_index = current_selected_index(model, state);
                 state.query.push(character);
-                model.reorder_preserving_index(state, previous_index);
+                reorder_current_preserving_index(model, state, previous_index);
             }
             _ => {}
         }
@@ -203,9 +249,9 @@ fn handle_key(
             if state.view == ViewMode::Detail {
                 state.back();
             } else if !state.query.is_empty() {
-                let previous_index = model.selected_index(state);
+                let previous_index = current_selected_index(model, state);
                 state.query.clear();
-                model.reorder_preserving_index(state, previous_index);
+                reorder_current_preserving_index(model, state, previous_index);
             }
             InputAction::None
         }
@@ -215,28 +261,37 @@ fn handle_key(
             state.help_open = true;
             InputAction::None
         }
+        KeyCode::Char('a') if state.view == ViewMode::List => {
+            state.toggle_entity_mode();
+            match state.entity_mode {
+                EntityMode::Process if state.selected_pid.is_none() => model.select_first(state),
+                EntityMode::Task if state.selected_task_id.is_none() => model.select_first_task(state),
+                _ => {}
+            }
+            InputAction::None
+        }
         KeyCode::Down | KeyCode::Char('j') if state.view == ViewMode::List => {
-            model.move_selection(state, 1);
+            move_selection(model, state, 1);
             InputAction::None
         }
         KeyCode::Up | KeyCode::Char('k') if state.view == ViewMode::List => {
-            model.move_selection(state, -1);
+            move_selection(model, state, -1);
             InputAction::None
         }
         KeyCode::PageDown if state.view == ViewMode::List => {
-            model.move_page(state, page_size, 1);
+            move_page(model, state, page_size, 1);
             InputAction::None
         }
         KeyCode::PageUp if state.view == ViewMode::List => {
-            model.move_page(state, page_size, -1);
+            move_page(model, state, page_size, -1);
             InputAction::None
         }
         KeyCode::Home if state.view == ViewMode::List => {
-            model.select_first(state);
+            select_first(model, state);
             InputAction::None
         }
         KeyCode::End if state.view == ViewMode::List => {
-            model.select_last(state);
+            select_last(model, state);
             InputAction::None
         }
         KeyCode::Enter => {
@@ -247,7 +302,9 @@ fn handle_key(
             state.search_active = true;
             InputAction::None
         }
-        KeyCode::Char('t') if state.view == ViewMode::List => {
+        KeyCode::Char('t')
+            if state.view == ViewMode::List && state.entity_mode == EntityMode::Process =>
+        {
             state.tree_mode = !state.tree_mode;
             model.reorder(state);
             InputAction::None
