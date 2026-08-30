@@ -1,3 +1,4 @@
+mod format;
 mod model;
 mod resolver;
 
@@ -8,6 +9,7 @@ use crate::collector::process::ProcessIoSnapshot;
 use crate::process::ProcessIdentity;
 use crate::provenance::resolve_all_provenance;
 
+pub use format::{format_task, format_tasks};
 pub use model::{TaskId, TaskKind, TaskSnapshot};
 use resolver::resolve_task;
 
