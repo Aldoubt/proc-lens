@@ -4,4 +4,5 @@ pub mod collector;
 pub mod gpu;
 pub mod process;
 pub mod provenance;
+pub mod task;
 pub mod ui;

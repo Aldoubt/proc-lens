@@ -7,7 +7,7 @@ use std::str::FromStr;
 use crate::process::ProcessSnapshot;
 use crate::process::resolver::resolve_ros2_process;
 
-pub use rules::{known_development_executable, systemd_service_unit};
+pub use rules::{is_container_cgroup, known_development_executable, systemd_service_unit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ProcessType {
@@ -243,7 +243,8 @@ fn push(evidence: &mut Vec<Evidence>, process_type: ProcessType, score: i32, mes
     });
 }
 
-fn is_ros2_launcher(process: &ProcessSnapshot) -> bool {
+#[must_use]
+pub fn is_ros2_launcher(process: &ProcessSnapshot) -> bool {
     let joined = process.command_line().to_ascii_lowercase();
     joined.contains("ros2 launch") || joined.contains("ros2 run")
 }
