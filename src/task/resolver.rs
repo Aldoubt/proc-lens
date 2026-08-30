@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::EnrichedProcess;
-use crate::classifier::{
-    ProcessType, is_container_cgroup, is_ros2_launcher, systemd_service_unit,
-};
+use crate::classifier::{ProcessType, is_container_cgroup, is_ros2_launcher, systemd_service_unit};
 use crate::process::ProcessIdentity;
 use crate::provenance::ProcessProvenance;
 
@@ -148,10 +146,7 @@ fn container_key(process: &EnrichedProcess) -> Option<String> {
         .min()
 }
 
-fn application_label(
-    provenance: Option<&ProcessProvenance>,
-    process: &EnrichedProcess,
-) -> String {
+fn application_label(provenance: Option<&ProcessProvenance>, process: &EnrichedProcess) -> String {
     provenance
         .map(|value| value.project_label.as_str())
         .filter(|label| !label.is_empty() && *label != "-")

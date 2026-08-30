@@ -36,8 +36,10 @@ pub fn aggregate_tasks(snapshot: &AppSnapshot) -> Vec<TaskSnapshot> {
                 )
             });
 
-            let member_ids: Vec<ProcessIdentity> =
-                members.iter().map(|member| member.snapshot.identity).collect();
+            let member_ids: Vec<ProcessIdentity> = members
+                .iter()
+                .map(|member| member.snapshot.identity)
+                .collect();
             let cpu_percent = members
                 .iter()
                 .map(|member| member.snapshot.cpu_percent)
@@ -47,10 +49,8 @@ pub fn aggregate_tasks(snapshot: &AppSnapshot) -> Vec<TaskSnapshot> {
             });
             let disk_read_bytes = sum_io(&members, snapshot, |io| Some(io.read_bytes));
             let disk_write_bytes = sum_io(&members, snapshot, |io| Some(io.write_bytes));
-            let read_bytes_per_second =
-                sum_io(&members, snapshot, |io| io.read_bytes_per_second);
-            let write_bytes_per_second =
-                sum_io(&members, snapshot, |io| io.write_bytes_per_second);
+            let read_bytes_per_second = sum_io(&members, snapshot, |io| io.read_bytes_per_second);
+            let write_bytes_per_second = sum_io(&members, snapshot, |io| io.write_bytes_per_second);
             let vram_bytes = sum_vram(&members);
 
             TaskSnapshot {
@@ -106,12 +106,7 @@ fn sum_vram(members: &[&EnrichedProcess]) -> Option<u64> {
     let mut total = 0_u64;
     let mut seen = false;
     for member in members {
-        if let Some(value) = member
-            .snapshot
-            .gpu
-            .as_ref()
-            .and_then(|gpu| gpu.vram_bytes)
-        {
+        if let Some(value) = member.snapshot.gpu.as_ref().and_then(|gpu| gpu.vram_bytes) {
             seen = true;
             total = total.saturating_add(value);
         }
