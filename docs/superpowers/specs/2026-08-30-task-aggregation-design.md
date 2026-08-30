@@ -70,6 +70,8 @@ Canonical forms:
 
 PID-based IDs always include `start_time_ticks` so PID reuse cannot inherit an older task identity.
 
+For containers, `normalized-cgroup-key` is the lexicographically smallest live cgroup path that matches the existing container-cgroup rule, after trimming redundant leading/trailing `/` characters. The full matching path is retained rather than guessing a shortened container ID. This is deterministic and keeps distinct container scopes separate.
+
 ### TaskSnapshot
 
 A task snapshot contains:
@@ -116,7 +118,7 @@ If no ROS 2 launcher owns the process and the process cgroup proves a concrete `
 
 ### 3. Container cgroup
 
-If no higher-priority anchor applies and the process cgroup proves a container, group by a deterministic normalized container key extracted from the cgroup marker already used by container classification.
+If no higher-priority anchor applies and the process cgroup proves a container, group by the deterministic normalized cgroup key defined above.
 
 Different containers must not merge even when their process names or project labels match.
 
@@ -125,6 +127,8 @@ Different containers must not merge even when their process names or project lab
 If no higher-priority anchor applies and provenance identifies a live owner PID for a generic child, group the child with that owner using the owner's `ProcessIdentity`.
 
 This covers browser child processes and development application children without pretending inherited evidence belongs directly to the child PID.
+
+The direct owner process itself uses the same `app:<pid>:<start_time_ticks>` task when it is a Browser or Development process, so owner and inherited children converge on one application task.
 
 ### 5. Standalone process fallback
 
@@ -156,9 +160,11 @@ If any member is inaccessible or unknown, the task-level value for that metric i
 
 ### VRAM
 
-Task VRAM is the sum of known per-process NVML VRAM values when the GPU provider returned per-process GPU data for all task members that are represented in the provider sample.
+When a GPU sample is available, task VRAM is the saturating sum of every member's known per-process NVML VRAM value. Members with no GPU process entry contribute no VRAM. If no member has a per-process VRAM value, the task value is `None` and displays as `-` rather than an invented `0`.
 
-If no per-process NVML data is available for the task, display `-`. v0.3.0 does not sum per-process GPU utilization percentages because that is not a robust aggregate metric.
+When no GPU sample is available at all, every task VRAM value is `None`.
+
+v0.3.0 does not sum per-process GPU utilization percentages because that is not a robust aggregate metric.
 
 ## TUI behavior
 
@@ -211,7 +217,7 @@ Task search matches:
 - member process name/command;
 - member provenance project label.
 
-The existing `--type` process-type filter remains a Process View filter. v0.3.0 does not reinterpret it as a task-kind filter.
+The existing `--type` process-type filter remains a Process View filter. Task View ignores that filter in v0.3.0; v0.3.0 does not reinterpret it as a task-kind filter.
 
 ## Task detail
 
@@ -269,7 +275,7 @@ Task grouping only uses members present in the completed `AppSnapshot`. Missing 
 
 Task history such as EMA is keyed by `TaskId`; PID/start-time based IDs prevent PID-reuse contamination.
 
-All sums use saturating integer addition for byte counters.
+All byte sums use saturating integer addition.
 
 ## Files expected to change
 
@@ -283,7 +289,8 @@ Create:
 Modify narrowly:
 
 - `src/lib.rs`
-- `src/classifier/mod.rs` to expose/reuse ROS 2 launcher semantics if needed
+- `src/classifier/mod.rs` to expose/reuse ROS 2 launcher semantics
+- `src/classifier/rules.rs` to expose/reuse container-cgroup semantics
 - `src/app.rs`
 - `src/ui/model.rs`
 - `src/ui/dashboard.rs`
@@ -309,16 +316,17 @@ Tests must prove at minimum:
 5. generic `user@<uid>.service` does not become a task anchor;
 6. different containers do not merge;
 7. Firefox/DEV generic children inherit a proven live provenance owner;
-8. same project label alone never merges unrelated processes;
-9. PID reuse changes PID-based TaskId because `start_time_ticks` changes;
-10. CPU and RSS sums are correct;
-11. CPU aggregate may exceed 100%;
-12. one missing member I/O sample makes the corresponding task I/O aggregate unknown;
-13. VRAM aggregation never fabricates zero when unavailable;
-14. task rows sort, search and preserve selection across refreshes;
-15. Process View behavior and existing tests remain unchanged;
-16. `tasks` and `task <TASK_ID>` CLI formatting is deterministic;
-17. `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-features`, CPU-only tests/build, and Debian packaging validation pass.
+8. direct Browser/DEV owner and inherited children share one application task;
+9. same project label alone never merges unrelated processes;
+10. PID reuse changes PID-based TaskId because `start_time_ticks` changes;
+11. CPU and RSS sums are correct;
+12. CPU aggregate may exceed 100%;
+13. one missing member I/O sample makes the corresponding task I/O aggregate unknown;
+14. VRAM aggregation never fabricates zero when unavailable;
+15. task rows sort, search and preserve selection across refreshes;
+16. Process View behavior and existing tests remain unchanged;
+17. `tasks` and `task <TASK_ID>` CLI formatting is deterministic;
+18. `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-features`, CPU-only tests/build, and Debian packaging validation pass.
 
 ## Release acceptance
 
