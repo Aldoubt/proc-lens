@@ -1,24 +1,25 @@
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Gauge, Paragraph, Row, Table, TableState, Wrap};
 
-use crate::app::{SortMode, UiState, ViewMode, format_bytes};
+use crate::app::{EntityMode, SortMode, UiState, ViewMode, format_bytes};
 use crate::collector::storage::StorageSnapshot;
 
 use super::model::{PresentationModel, compact_command_label, truncate_label};
 
-const HELP_TEXT: &str = "↑ / k        previous process\n\
-↓ / j        next process\n\
+const HELP_TEXT: &str = "↑ / k        previous row\n\
+↓ / j        next row\n\
 PgUp/PgDn   move one page\n\
-Home/End    first / last process\n\
-Enter       inspect selected PID\n\
+Home/End    first / last row\n\
+Enter       inspect selected row\n\
+a           process / task view\n\
 /           search\n\
 Space       pause / resume\n\
 r           refresh once while paused\n\
-t           tree mode\n\
+t           process tree mode\n\
 c / m       sort CPU / memory\n\
-g / p       sort GPU / PID\n\
+g / p       sort GPU / PID-or-task\n\
 ?           toggle this help\n\
 q / Esc     back / close";
 
@@ -40,24 +41,53 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
     ])
     .areas(frame.area());
 
-    let mode = if state.tree_mode {
+    let sort_mode = if state.entity_mode == EntityMode::Process && state.tree_mode {
         "tree"
     } else {
         sort_label(state.sort)
     };
+    let entity_label = match state.entity_mode {
+        EntityMode::Process => "PROCESS",
+        EntityMode::Task => "TASK",
+    };
+    let entity_count = match state.entity_mode {
+        EntityMode::Process => snapshot.processes.len(),
+        EntityMode::Task => model.visible_task_rows(state).len(),
+    };
     let status = if state.paused { "  PAUSED" } else { "" };
     let title = Paragraph::new(format!(
-        " proc-lens {}  load {:.2} {:.2} {:.2}  processes {}  mode {}{}",
+        " proc-lens {}  load {:.2} {:.2} {:.2}  {} {}  sort {}{}",
         env!("CARGO_PKG_VERSION"),
         snapshot.load_average[0],
         snapshot.load_average[1],
         snapshot.load_average[2],
-        snapshot.processes.len(),
-        mode,
+        entity_label,
+        entity_count,
+        sort_mode,
         status,
     ));
     frame.render_widget(title, title_area);
 
+    render_metrics(frame, model, metrics_area);
+    match state.entity_mode {
+        EntityMode::Process => render_process_table(frame, model, state, table_area),
+        EntityMode::Task => render_task_table(frame, model, state, table_area),
+    }
+
+    let footer = if state.search_active {
+        format!(" /{}  Enter/Esc done", state.query)
+    } else {
+        " ↑↓ move  Enter inspect  a view  / search  Space pause  ? help".to_owned()
+    };
+    frame.render_widget(Paragraph::new(footer), footer_area);
+
+    if state.help_open {
+        render_help(frame);
+    }
+}
+
+fn render_metrics(frame: &mut Frame, model: &PresentationModel, metrics_area: Rect) {
+    let snapshot = model.snapshot();
     let gpu_device = snapshot.gpu.as_ref().and_then(|gpu| gpu.devices.first());
     let metric_areas =
         Layout::horizontal(metric_constraints(gpu_device.is_some())).split(metrics_area);
@@ -123,7 +153,14 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
             .label(label);
         frame.render_widget(gpu, metric_areas[3]);
     }
+}
 
+fn render_process_table(
+    frame: &mut Frame,
+    model: &PresentationModel,
+    state: &UiState,
+    table_area: Rect,
+) {
     let command_budget = usize::from(frame.area().width.saturating_sub(88)).max(20);
     let visible = model.visible_rows(state);
     let rows = visible.iter().map(|row| {
@@ -185,17 +222,61 @@ pub fn render(frame: &mut Frame, model: &PresentationModel, state: &UiState) {
 
     let mut table_state = TableState::default().with_selected(model.selected_index(state));
     frame.render_stateful_widget(table, table_area, &mut table_state);
+}
 
-    let footer = if state.search_active {
-        format!(" /{}  Enter/Esc done", state.query)
-    } else {
-        " ↑↓ move  Enter inspect  / search  Space pause  ? help".to_owned()
-    };
-    frame.render_widget(Paragraph::new(footer), footer_area);
+fn render_task_table(
+    frame: &mut Frame,
+    model: &PresentationModel,
+    state: &UiState,
+    table_area: Rect,
+) {
+    let visible = model.visible_task_rows(state);
+    let rows = visible.iter().map(|row| {
+        let task = row.task;
+        Row::new(vec![
+            truncate_label(&task.label, 32),
+            task.kind.to_string(),
+            task.process_count.to_string(),
+            format!("{:.1}", row.cpu_percent),
+            format_bytes(task.rss_bytes),
+            optional_rate(task.read_bytes_per_second),
+            optional_rate(task.write_bytes_per_second),
+            task.vram_bytes
+                .map(format_bytes)
+                .unwrap_or_else(|| "-".into()),
+        ])
+    });
 
-    if state.help_open {
-        render_help(frame);
-    }
+    let header = Row::new(vec![
+        "TASK", "KIND", "PROC", "CPU%", "RSS Σ", "READ/s", "WRITE/s", "VRAM",
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD));
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(24),
+            Constraint::Length(10),
+            Constraint::Length(6),
+            Constraint::Length(8),
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Length(10),
+        ],
+    )
+    .header(header)
+    .column_spacing(1)
+    .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+    .highlight_symbol("> ");
+
+    let mut table_state = TableState::default().with_selected(model.selected_task_index(state));
+    frame.render_stateful_widget(table, table_area, &mut table_state);
+}
+
+fn optional_rate(value: Option<u64>) -> String {
+    value
+        .map(|bytes| format!("{}/s", format_bytes(bytes)))
+        .unwrap_or_else(|| "-".into())
 }
 
 fn metric_constraints(has_gpu: bool) -> Vec<Constraint> {
@@ -257,7 +338,7 @@ fn sort_label(sort: SortMode) -> &'static str {
         SortMode::Cpu => "cpu",
         SortMode::Memory => "memory",
         SortMode::Gpu => "gpu",
-        SortMode::Pid => "pid",
+        SortMode::Pid => "pid/task",
     }
 }
 
