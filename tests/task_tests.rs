@@ -6,6 +6,7 @@ use proc_lens::collector::process::ProcessIoSnapshot;
 use proc_lens::process::{MemorySnapshot, ProcessGpuUsage, ProcessIdentity, ProcessSnapshot};
 use proc_lens::task::{TaskKind, aggregate_tasks};
 
+#[allow(clippy::too_many_arguments)]
 fn process(
     pid: i32,
     ppid: i32,
