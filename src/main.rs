@@ -6,6 +6,7 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use proc_lens::app::{Inspector, format_inspect, format_snapshot};
 use proc_lens::classifier::ProcessType;
+use proc_lens::task::{TaskId, format_task, format_tasks};
 
 #[derive(Debug, Parser)]
 #[command(name = "proc-lens", version, about)]
@@ -24,6 +25,10 @@ enum Command {
     Snapshot,
     /// Explain one process and its provenance.
     Inspect { pid: i32 },
+    /// Print a non-interactive task-level resource snapshot.
+    Tasks,
+    /// Explain one current task and list its member processes.
+    Task { task_id: String },
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -43,6 +48,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Command::Snapshot) => {
             let snapshot = sampled_snapshot()?;
             let output = format_snapshot(&snapshot, cli.process_type);
+            print!("{output}");
+        }
+        Some(Command::Tasks) => {
+            let snapshot = sampled_snapshot()?;
+            print!("{}", format_tasks(&snapshot));
+        }
+        Some(Command::Task { task_id }) => {
+            let snapshot = sampled_snapshot()?;
+            let task_id = TaskId::new(task_id);
+            let output = format_task(&snapshot, &task_id).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("task {task_id} is not available"),
+                )
+            })?;
             print!("{output}");
         }
         None => proc_lens::ui::run(cli.process_type)?,
