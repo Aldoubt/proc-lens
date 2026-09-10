@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn parses_thread_stat_with_cpu_and_policy() {
-        let input = "4391 (mapping worker) S 4382 0 0 0 0 0 0 0 0 0 100 20 0 0 20 0 1 0 123456 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4 0 0";
+        let input = "4391 (mapping worker) S 4382 0 0 0 0 0 0 0 0 0 100 20 0 0 20 0 1 0 123456 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4 0 0";
         let stat = parse_thread_stat(input).expect("thread stat should parse");
         assert_eq!(stat.tid, 4391);
         assert_eq!(stat.name, "mapping worker");
