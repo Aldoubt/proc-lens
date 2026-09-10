@@ -172,7 +172,7 @@ fn now_ns() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{HostRecord, RuntimeSnapshot, ThreadRecord, RUNTIME_SCHEMA_VERSION};
+    use super::{HostRecord, RUNTIME_SCHEMA_VERSION, RuntimeSnapshot, ThreadRecord};
 
     #[test]
     fn runtime_json_keeps_unknown_measurements_as_null() {
