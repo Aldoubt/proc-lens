@@ -233,11 +233,9 @@ fn parse_field<T>(value: &str, field_number: usize) -> Result<T, ParseError>
 where
     T: std::str::FromStr,
 {
-    value.parse::<T>().map_err(|_| {
-        ParseError::new(format!(
-            "invalid thread stat field {field_number}: {value}"
-        ))
-    })
+    value
+        .parse::<T>()
+        .map_err(|_| ParseError::new(format!("invalid thread stat field {field_number}: {value}")))
 }
 
 fn invalid_data(error: ParseError) -> io::Error {
