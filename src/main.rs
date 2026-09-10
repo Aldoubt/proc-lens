@@ -6,6 +6,8 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use proc_lens::app::{Inspector, format_inspect, format_snapshot};
 use proc_lens::classifier::ProcessType;
+use proc_lens::collector::thread::ThreadCollector;
+use proc_lens::runtime::RuntimeSnapshot;
 
 #[derive(Debug, Parser)]
 #[command(name = "proc-lens", version, about)]
@@ -21,15 +23,22 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Print a non-interactive process snapshot.
-    Snapshot,
+    Snapshot {
+        /// Emit the normalized runtime snapshot as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Explain one process and its provenance.
     Inspect { pid: i32 },
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
+    let Cli {
+        process_type,
+        command,
+    } = Cli::parse();
 
-    match cli.command {
+    match command {
         Some(Command::Inspect { pid }) => {
             let snapshot = sampled_snapshot()?;
             let output = format_inspect(&snapshot, pid).ok_or_else(|| {
@@ -40,12 +49,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             })?;
             println!("{output}");
         }
-        Some(Command::Snapshot) => {
+        Some(Command::Snapshot { json: true }) => {
+            let snapshot = sampled_runtime_snapshot(process_type)?;
+            println!("{}", snapshot.to_json_pretty()?);
+        }
+        Some(Command::Snapshot { json: false }) => {
             let snapshot = sampled_snapshot()?;
-            let output = format_snapshot(&snapshot, cli.process_type);
+            let output = format_snapshot(&snapshot, process_type);
             print!("{output}");
         }
-        None => proc_lens::ui::run(cli.process_type)?,
+        None => proc_lens::ui::run(process_type)?,
     }
 
     Ok(())
@@ -56,4 +69,29 @@ fn sampled_snapshot() -> io::Result<proc_lens::app::AppSnapshot> {
     let _ = inspector.refresh()?;
     thread::sleep(Duration::from_millis(250));
     inspector.refresh()
+}
+
+fn sampled_runtime_snapshot(filter: Option<ProcessType>) -> io::Result<RuntimeSnapshot> {
+    let mut inspector = Inspector::default();
+    let mut thread_collector = ThreadCollector::default();
+
+    let first = inspector.refresh()?;
+    let first_processes = first
+        .processes
+        .iter()
+        .map(|process| process.snapshot.clone())
+        .collect::<Vec<_>>();
+    let _ = thread_collector.sample(&first_processes)?;
+
+    thread::sleep(Duration::from_millis(250));
+
+    let snapshot = inspector.refresh()?;
+    let processes = snapshot
+        .processes
+        .iter()
+        .map(|process| process.snapshot.clone())
+        .collect::<Vec<_>>();
+    let threads = thread_collector.sample(&processes)?;
+
+    Ok(RuntimeSnapshot::from_app(&snapshot, &threads, filter))
 }
