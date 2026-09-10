@@ -13,4 +13,8 @@ impl RosProcessMapper {
     pub fn resolve() -> Vec<RosProcessBinding> {
         Vec::new()
     }
+
+    pub fn find_pid(bindings: &[RosProcessBinding], pid: u32) -> Option<&RosProcessBinding> {
+        bindings.iter().find(|binding| binding.pid == pid)
+    }
 }
