@@ -15,4 +15,9 @@ impl RosTopicStatsCollector {
     pub fn collect() -> Vec<RosTopicStat> {
         Vec::new()
     }
+
+    pub fn bandwidth_mb_s(stat: &RosTopicStat) -> Option<f64> {
+        stat.bandwidth_bytes_per_sec
+            .map(|bytes| bytes as f64 / 1024.0 / 1024.0)
+    }
 }
