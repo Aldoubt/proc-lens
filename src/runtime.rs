@@ -6,8 +6,9 @@ use serde::Serialize;
 use crate::app::AppSnapshot;
 use crate::classifier::ProcessType;
 use crate::collector::thread::ThreadSnapshot;
-use crate::process::ProcessIdentity;
+use crate::process::{ProcessIdentity, ProcessSnapshot};
 use crate::provenance::resolve_all_provenance;
+use crate::ros2_probe::{RosNodeInfo, RosProcessMapper};
 
 pub const RUNTIME_SCHEMA_VERSION: u32 = 1;
 
@@ -58,6 +59,33 @@ pub struct ThreadRecord {
     pub involuntary_context_switches: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RosNodeRecord {
+    pub name: String,
+    pub namespace: String,
+    pub full_name: String,
+    pub process_identity: Option<ProcessIdentity>,
+    pub mapping_confidence: String,
+    pub mapping_source: String,
+    pub executable: Option<String>,
+    pub package: Option<String>,
+}
+
+impl RosNodeRecord {
+    fn from_mapping(mapping: crate::ros2_probe::RosNodeMapping) -> Self {
+        Self {
+            name: mapping.node.name,
+            namespace: mapping.node.namespace,
+            full_name: mapping.node.full_name,
+            process_identity: mapping.process_identity,
+            mapping_confidence: mapping.confidence.to_string(),
+            mapping_source: mapping.source.to_string(),
+            executable: None,
+            package: mapping.node.package,
+        }
+    }
+}
+
 impl From<&ThreadSnapshot> for ThreadRecord {
     fn from(thread: &ThreadSnapshot) -> Self {
         Self {
@@ -85,10 +113,11 @@ pub struct RuntimeSnapshot {
     pub host: HostRecord,
     pub processes: Vec<ProcessRecord>,
     pub threads: Vec<ThreadRecord>,
-    pub ros_nodes: Vec<serde_json::Value>,
+    pub ros_nodes: Vec<RosNodeRecord>,
     pub topics: Vec<serde_json::Value>,
     pub edges: Vec<serde_json::Value>,
     pub findings: Vec<serde_json::Value>,
+    pub ros_graph_discovery_elapsed_ms: Option<u128>,
 }
 
 impl RuntimeSnapshot {
@@ -97,6 +126,8 @@ impl RuntimeSnapshot {
         app: &AppSnapshot,
         thread_samples: &[ThreadSnapshot],
         filter: Option<ProcessType>,
+        ros_nodes: &[RosNodeInfo],
+        ros_graph_discovery_elapsed_ms: Option<u128>,
     ) -> Self {
         let provenance = resolve_all_provenance(&app.processes);
         let mut selected_processes = HashSet::new();
@@ -143,6 +174,15 @@ impl RuntimeSnapshot {
             })
             .map(ThreadRecord::from)
             .collect();
+        let process_snapshots: Vec<ProcessSnapshot> = app
+            .processes
+            .iter()
+            .map(|process| process.snapshot.clone())
+            .collect();
+        let ros_nodes = RosProcessMapper::map_nodes(ros_nodes, &process_snapshots)
+            .into_iter()
+            .map(RosNodeRecord::from_mapping)
+            .collect();
 
         Self {
             schema_version: RUNTIME_SCHEMA_VERSION,
@@ -150,10 +190,11 @@ impl RuntimeSnapshot {
             host: HostRecord::current(),
             processes,
             threads,
-            ros_nodes: Vec::new(),
+            ros_nodes,
             topics: Vec::new(),
             edges: Vec::new(),
             findings: Vec::new(),
+            ros_graph_discovery_elapsed_ms,
         }
     }
 
@@ -203,6 +244,7 @@ mod tests {
             topics: Vec::new(),
             edges: Vec::new(),
             findings: Vec::new(),
+            ros_graph_discovery_elapsed_ms: None,
         };
 
         let value = serde_json::to_value(snapshot).expect("runtime snapshot should serialize");
