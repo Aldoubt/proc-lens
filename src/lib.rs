@@ -5,4 +5,5 @@ pub mod gpu;
 pub mod process;
 pub mod provenance;
 pub mod ros2_probe;
+pub mod runtime;
 pub mod ui;
