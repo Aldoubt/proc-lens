@@ -153,9 +153,7 @@ fn explicit_node_name(command: &[String]) -> Option<String> {
         if part == "-r" || part == "--remap" {
             return command
                 .get(index + 1)
-                .and_then(|remap| {
-                    remap.strip_prefix("__node:=").map(str::to_owned)
-                });
+                .and_then(|remap| remap.strip_prefix("__node:=").map(str::to_owned));
         }
         part.strip_prefix("__node:=").map(str::to_owned)
     })
