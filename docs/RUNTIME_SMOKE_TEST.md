@@ -19,4 +19,6 @@ Current acceptance boundary:
 | Linux Runtime Foundation | PASS/FAIL |
 | ROS Process classification | OBSERVE |
 | ROS Node -> PID | IMPLEMENTED (conservative mapping) |
-| Topic/Dataflow | NOT IMPLEMENTED |
+| ROS Topic topology | IMPLEMENTED (publisher/subscriber graph) |
+| Topic Hz / bandwidth | NOT IMPLEMENTED |
+| Dataflow findings/UI | NOT IMPLEMENTED |

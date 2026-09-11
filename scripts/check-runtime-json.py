@@ -60,8 +60,8 @@ def cpu_sort_key(item: dict[str, Any]) -> float:
 
 def text_report(report: dict[str, Any]) -> str:
     ros_status = "observed" if report["ros_node_count"] else "NOT IMPLEMENTED / EXPECTED EMPTY"
-    topic_status = "observed" if report["topic_count"] else "NOT IMPLEMENTED / EXPECTED EMPTY"
-    edge_status = "observed" if report["edge_count"] else "NOT IMPLEMENTED / EXPECTED EMPTY"
+    topic_status = "observed" if report["topic_count"] else "empty / ROS topology unavailable"
+    edge_status = "observed" if report["edge_count"] else "empty / ROS topology unavailable"
     finding_status = "observed" if report["finding_count"] else "NOT IMPLEMENTED / EXPECTED EMPTY"
     lines = [
         f"status: {report['status']}",
@@ -71,6 +71,7 @@ def text_report(report: dict[str, Any]) -> str:
         f"thread count: {report['thread_count']}",
         f"threads >= processes: {report['thread_count'] >= report['process_count']} (reported only)",
         f"ros graph discovery elapsed_ms: {report['ros_graph_discovery_elapsed_ms']!s}",
+        f"ros topic topology elapsed_ms: {report['ros_topic_topology_elapsed_ms']!s}",
         f"ros_nodes: {report['ros_node_count']} ({ros_status})",
         f"topics: {report['topic_count']} ({topic_status})",
         f"edges: {report['edge_count']} ({edge_status})",
@@ -147,9 +148,31 @@ def build_report(snapshot: dict[str, Any]) -> dict[str, Any]:
     graph_elapsed = snapshot.get("ros_graph_discovery_elapsed_ms")
     if graph_elapsed is not None:
         number(graph_elapsed, "ros_graph_discovery_elapsed_ms")
-    for name, values in (("topics", topics), ("edges", edges), ("findings", findings)):
-        if values:
-            warnings.append(f"{name} is populated; inspect runtime implementation coverage")
+    topology_elapsed = snapshot.get("ros_topic_topology_elapsed_ms")
+    if topology_elapsed is not None:
+        number(topology_elapsed, "ros_topic_topology_elapsed_ms")
+
+    for topic in topics:
+        topic_obj = require_object(topic, "topics[]")
+        if not isinstance(topic_obj.get("name"), str) or not topic_obj["name"].startswith("/"):
+            fail("topic.name must be an absolute ROS topic name")
+        for field in ("message_types", "publishers", "subscribers"):
+            values = require_array(topic_obj.get(field), f"topic.{field}")
+            if not all(isinstance(value, str) for value in values):
+                fail(f"topic.{field} must contain strings")
+
+    for edge in edges:
+        edge_obj = require_object(edge, "edges[]")
+        for field in ("topic", "publisher_node", "subscriber_node"):
+            value = edge_obj.get(field)
+            if not isinstance(value, str) or not value.startswith("/"):
+                fail(f"edge.{field} must be an absolute ROS name")
+        message_types = require_array(edge_obj.get("message_types"), "edge.message_types")
+        if not all(isinstance(value, str) for value in message_types):
+            fail("edge.message_types must contain strings")
+
+    if findings:
+        warnings.append("findings is populated; analyzer coverage should be reviewed")
 
     scheduler = Counter(str(item["scheduler"]) if item.get("scheduler") is not None else "null" for item in threads)
     cpu_core = Counter(str(item["last_cpu"]) if item.get("last_cpu") is not None else "null" for item in threads)
@@ -164,6 +187,7 @@ def build_report(snapshot: dict[str, Any]) -> dict[str, Any]:
         "edge_count": len(edges),
         "finding_count": len(findings),
         "ros_graph_discovery_elapsed_ms": graph_elapsed,
+        "ros_topic_topology_elapsed_ms": topology_elapsed,
         "top_cpu_processes": sorted(processes, key=cpu_sort_key, reverse=True)[:20],
         "top_cpu_threads": sorted(threads, key=cpu_sort_key, reverse=True)[:20],
         "top_thread_count_processes": sorted(processes, key=lambda item: item.get("thread_count", 0), reverse=True)[:20],
