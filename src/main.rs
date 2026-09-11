@@ -8,6 +8,7 @@ use proc_lens::app::{Inspector, format_inspect, format_snapshot};
 use proc_lens::classifier::ProcessType;
 use proc_lens::collector::thread::ThreadCollector;
 use proc_lens::runtime::RuntimeSnapshot;
+use proc_lens::ros2_probe::{CliRosGraphProvider, RosGraphProvider};
 
 #[derive(Debug, Parser)]
 #[command(name = "proc-lens", version, about)]
@@ -93,5 +94,16 @@ fn sampled_runtime_snapshot(filter: Option<ProcessType>) -> io::Result<RuntimeSn
         .collect::<Vec<_>>();
     let threads = thread_collector.sample(&processes)?;
 
-    Ok(RuntimeSnapshot::from_app(&snapshot, &threads, filter))
+    let (ros_nodes, graph_elapsed) = CliRosGraphProvider::default()
+        .discover()
+        .map(|(nodes, elapsed)| (nodes, Some(elapsed.as_millis())))
+        .unwrap_or_default();
+
+    Ok(RuntimeSnapshot::from_app(
+        &snapshot,
+        &threads,
+        filter,
+        &ros_nodes,
+        graph_elapsed,
+    ))
 }

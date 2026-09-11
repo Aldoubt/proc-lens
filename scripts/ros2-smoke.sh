@@ -92,7 +92,34 @@ with open(summary_path, "a") as output:
     output.write("  ROS graph nodes: see ros-nodes.txt\n")
     output.write("  Linux PID/process snapshot: see processes.txt\n")
     output.write("  proc-lens ROS2 classification: see ros-snapshot.txt and processes.txt\n")
-    output.write("  ros_nodes/topics/edges: EXPECTED GAP (runtime collectors not implemented)\n")
-    output.write("  ROS node -> PID mapping: EXPECTED GAP (not implemented; no mapping fabricated)\n")
+    output.write("  topics/edges: EXPECTED GAP (topic/dataflow collectors not implemented)\n")
+    output.write("  ROS node -> PID mapping: see ROS node mappings below\n")
+PY
+python3 - "$artifact_dir/runtime.json" "$artifact_dir/summary.txt" <<'PY'
+import json
+import sys
+
+runtime_path, summary_path = sys.argv[1:]
+runtime = json.load(open(runtime_path))
+nodes = {node["full_name"]: node for node in runtime["ros_nodes"]}
+missing = sorted({"/talker", "/listener"} - nodes.keys())
+if missing:
+    raise SystemExit("missing expected ROS graph nodes: " + ", ".join(missing))
+
+identities = {}
+with open(summary_path, "a") as output:
+    output.write("\nROS node mappings:\n")
+    for name in ("/talker", "/listener"):
+        node = nodes[name]
+        identity = node.get("process_identity")
+        if not identity or identity.get("pid", 0) <= 0 or identity.get("start_time_ticks", 0) <= 0:
+            raise SystemExit(f"invalid process identity for {name}: {identity!r}")
+        identities[name] = (identity["pid"], identity["start_time_ticks"])
+        output.write(
+            f"  {name}: pid={identity['pid']} start_time_ticks={identity['start_time_ticks']} "
+            f"confidence={node['mapping_confidence']} source={node['mapping_source']}\n"
+        )
+if identities["/talker"][0] == identities["/listener"][0]:
+    raise SystemExit("talker and listener unexpectedly share a PID")
 PY
 echo "PASS: proc-lens and ROS2 smoke commands completed" | tee -a "$artifact_dir/summary.txt"

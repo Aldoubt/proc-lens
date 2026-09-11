@@ -59,6 +59,10 @@ def cpu_sort_key(item: dict[str, Any]) -> float:
 
 
 def text_report(report: dict[str, Any]) -> str:
+    ros_status = "observed" if report["ros_node_count"] else "NOT IMPLEMENTED / EXPECTED EMPTY"
+    topic_status = "observed" if report["topic_count"] else "NOT IMPLEMENTED / EXPECTED EMPTY"
+    edge_status = "observed" if report["edge_count"] else "NOT IMPLEMENTED / EXPECTED EMPTY"
+    finding_status = "observed" if report["finding_count"] else "NOT IMPLEMENTED / EXPECTED EMPTY"
     lines = [
         f"status: {report['status']}",
         f"schema_version: {report['schema_version']}",
@@ -66,10 +70,11 @@ def text_report(report: dict[str, Any]) -> str:
         f"process count: {report['process_count']}",
         f"thread count: {report['thread_count']}",
         f"threads >= processes: {report['thread_count'] >= report['process_count']} (reported only)",
-        f"ros_nodes: {report['ros_node_count']} (NOT IMPLEMENTED / EXPECTED EMPTY)",
-        f"topics: {report['topic_count']} (NOT IMPLEMENTED / EXPECTED EMPTY)",
-        f"edges: {report['edge_count']} (NOT IMPLEMENTED / EXPECTED EMPTY)",
-        f"findings: {report['finding_count']} (NOT IMPLEMENTED / EXPECTED EMPTY)",
+        f"ros graph discovery elapsed_ms: {report['ros_graph_discovery_elapsed_ms']!s}",
+        f"ros_nodes: {report['ros_node_count']} ({ros_status})",
+        f"topics: {report['topic_count']} ({topic_status})",
+        f"edges: {report['edge_count']} ({edge_status})",
+        f"findings: {report['finding_count']} ({finding_status})",
         "",
         "Top 20 CPU processes:",
     ]
@@ -139,7 +144,10 @@ def build_report(snapshot: dict[str, Any]) -> dict[str, Any]:
     topics = require_array(snapshot.get("topics"), "topics")
     edges = require_array(snapshot.get("edges"), "edges")
     findings = require_array(snapshot.get("findings"), "findings")
-    for name, values in (("ros_nodes", ros_nodes), ("topics", topics), ("edges", edges), ("findings", findings)):
+    graph_elapsed = snapshot.get("ros_graph_discovery_elapsed_ms")
+    if graph_elapsed is not None:
+        number(graph_elapsed, "ros_graph_discovery_elapsed_ms")
+    for name, values in (("topics", topics), ("edges", edges), ("findings", findings)):
         if values:
             warnings.append(f"{name} is populated; inspect runtime implementation coverage")
 
@@ -155,6 +163,7 @@ def build_report(snapshot: dict[str, Any]) -> dict[str, Any]:
         "topic_count": len(topics),
         "edge_count": len(edges),
         "finding_count": len(findings),
+        "ros_graph_discovery_elapsed_ms": graph_elapsed,
         "top_cpu_processes": sorted(processes, key=cpu_sort_key, reverse=True)[:20],
         "top_cpu_threads": sorted(threads, key=cpu_sort_key, reverse=True)[:20],
         "top_thread_count_processes": sorted(processes, key=lambda item: item.get("thread_count", 0), reverse=True)[:20],
