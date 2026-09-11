@@ -193,9 +193,7 @@ struct TopicBuilder {
     subscribers: BTreeSet<String>,
 }
 
-fn aggregate_topology(
-    nodes: &[RosNodeTopology],
-) -> (Vec<RosTopicInfo>, Vec<RosTopicEdge>) {
+fn aggregate_topology(nodes: &[RosNodeTopology]) -> (Vec<RosTopicInfo>, Vec<RosTopicEdge>) {
     let mut by_topic: BTreeMap<String, TopicBuilder> = BTreeMap::new();
 
     for node in nodes {
@@ -262,7 +260,7 @@ impl RosTopicStatsCollector {
 
 #[cfg(test)]
 mod tests {
-    use super::{aggregate_topology, parse_node_info, RosNodeTopology, RosTopicEndpoint};
+    use super::{RosNodeTopology, RosTopicEndpoint, aggregate_topology, parse_node_info};
 
     #[test]
     fn parses_publishers_and_subscribers_from_node_info() {
