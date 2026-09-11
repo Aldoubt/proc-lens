@@ -92,7 +92,7 @@ with open(summary_path, "a") as output:
     output.write("  ROS graph nodes: see ros-nodes.txt\n")
     output.write("  Linux PID/process snapshot: see processes.txt\n")
     output.write("  proc-lens ROS2 classification: see ros-snapshot.txt and processes.txt\n")
-    output.write("  topics/edges: EXPECTED GAP (topic/dataflow collectors not implemented)\n")
+    output.write("  topics/edges: topology implemented; Hz/bandwidth remain NOT IMPLEMENTED\n")
     output.write("  ROS node -> PID mapping: see ROS node mappings below\n")
 PY
 python3 - "$artifact_dir/runtime.json" "$artifact_dir/summary.txt" <<'PY'
@@ -121,5 +121,41 @@ with open(summary_path, "a") as output:
         )
 if identities["/talker"][0] == identities["/listener"][0]:
     raise SystemExit("talker and listener unexpectedly share a PID")
+PY
+python3 - "$artifact_dir/runtime.json" "$artifact_dir/summary.txt" <<'PY'
+import json
+import sys
+
+runtime_path, summary_path = sys.argv[1:]
+runtime = json.load(open(runtime_path))
+topics = {topic["name"]: topic for topic in runtime["topics"]}
+chatter = topics.get("/chatter")
+if chatter is None:
+    raise SystemExit("missing expected /chatter topic topology")
+if "/talker" not in chatter.get("publishers", []):
+    raise SystemExit("/talker is not recorded as a /chatter publisher")
+if "/listener" not in chatter.get("subscribers", []):
+    raise SystemExit("/listener is not recorded as a /chatter subscriber")
+
+edge = next(
+    (
+        item
+        for item in runtime["edges"]
+        if item.get("topic") == "/chatter"
+        and item.get("publisher_node") == "/talker"
+        and item.get("subscriber_node") == "/listener"
+    ),
+    None,
+)
+if edge is None:
+    raise SystemExit("missing expected /talker -> /chatter -> /listener edge")
+
+with open(summary_path, "a") as output:
+    output.write("\nROS topic topology:\n")
+    output.write(
+        f"  /chatter: publishers={chatter['publishers']} "
+        f"subscribers={chatter['subscribers']} types={chatter['message_types']}\n"
+    )
+    output.write("  edge: /talker -> /chatter -> /listener PASS\n")
 PY
 echo "PASS: proc-lens and ROS2 smoke commands completed" | tee -a "$artifact_dir/summary.txt"

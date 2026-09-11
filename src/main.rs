@@ -7,7 +7,9 @@ use clap::{Parser, Subcommand};
 use proc_lens::app::{Inspector, format_inspect, format_snapshot};
 use proc_lens::classifier::ProcessType;
 use proc_lens::collector::thread::ThreadCollector;
-use proc_lens::ros2_probe::{CliRosGraphProvider, RosGraphProvider};
+use proc_lens::ros2_probe::{
+    CliRosGraphProvider, CliRosTopicTopologyProvider, RosGraphProvider, RosTopicTopologyProvider,
+};
 use proc_lens::runtime::RuntimeSnapshot;
 
 #[derive(Debug, Parser)]
@@ -99,11 +101,19 @@ fn sampled_runtime_snapshot(filter: Option<ProcessType>) -> io::Result<RuntimeSn
         .map(|(nodes, elapsed)| (nodes, Some(elapsed.as_millis())))
         .unwrap_or_default();
 
+    let (ros_topics, ros_edges, topology_elapsed) = CliRosTopicTopologyProvider::default()
+        .discover(&ros_nodes)
+        .map(|(topics, edges, elapsed)| (topics, edges, Some(elapsed.as_millis())))
+        .unwrap_or_default();
+
     Ok(RuntimeSnapshot::from_app(
         &snapshot,
         &threads,
         filter,
         &ros_nodes,
+        &ros_topics,
+        &ros_edges,
         graph_elapsed,
+        topology_elapsed,
     ))
 }
