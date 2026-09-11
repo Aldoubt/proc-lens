@@ -2,6 +2,7 @@ pub mod cpu;
 pub mod memory;
 pub mod process;
 pub mod storage;
+pub mod thread;
 
 use std::error::Error;
 use std::fmt::{Display, Formatter};
