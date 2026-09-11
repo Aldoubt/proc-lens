@@ -81,7 +81,9 @@ impl CliRosTopicMetricsCollector {
         for topic in selected {
             let topic_name = topic.name.clone();
             let sample_window = self.sample_window;
-            handles.push(thread::spawn(move || observe_topic(topic_name, sample_window)));
+            handles.push(thread::spawn(move || {
+                observe_topic(topic_name, sample_window)
+            }));
         }
 
         let metrics = handles
@@ -253,19 +255,24 @@ mod tests {
             name: name.to_owned(),
             message_types: vec!["test_msgs/msg/Test".to_owned()],
             publishers: publishers.iter().map(|value| (*value).to_owned()).collect(),
-            subscribers: subscribers.iter().map(|value| (*value).to_owned()).collect(),
+            subscribers: subscribers
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
         }
     }
 
     #[test]
     fn parses_ros2_topic_hz_output() {
-        let output = "average rate: 9.995\n\tmin: 0.099s max: 0.101s std dev: 0.00050s window: 10\n";
+        let output =
+            "average rate: 9.995\n\tmin: 0.099s max: 0.101s std dev: 0.00050s window: 10\n";
         assert_eq!(parse_hz(output), Some(9.995));
     }
 
     #[test]
     fn parses_ros2_topic_bw_output_using_decimal_units() {
-        let output = "5.20 MB/s from 100 messages\n\tMessage size mean: 0.08 MB min: 0.08 MB max: 0.08 MB\n";
+        let output =
+            "5.20 MB/s from 100 messages\n\tMessage size mean: 0.08 MB min: 0.08 MB max: 0.08 MB\n";
         let (bandwidth, mean, samples) = parse_bandwidth(output);
         assert_eq!(bandwidth, Some(5_200_000));
         assert_eq!(mean, Some(80_000));
@@ -275,8 +282,16 @@ mod tests {
     #[test]
     fn selects_real_data_edges_and_ignores_infrastructure_topics() {
         let topics = vec![
-            topic("/fastlio2/body_cloud", &["/fastlio2/lio_node"], &["/pgo/pgo_node"]),
-            topic("/fastlio2/lio_odom", &["/fastlio2/lio_node"], &["/pgo/pgo_node"]),
+            topic(
+                "/fastlio2/body_cloud",
+                &["/fastlio2/lio_node"],
+                &["/pgo/pgo_node"],
+            ),
+            topic(
+                "/fastlio2/lio_odom",
+                &["/fastlio2/lio_node"],
+                &["/pgo/pgo_node"],
+            ),
             topic("/parameter_events", &["/a"], &["/b"]),
             topic("/rosout", &["/a"], &["/b"]),
             topic("/output_only", &["/a"], &[]),

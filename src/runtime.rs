@@ -274,7 +274,10 @@ impl RuntimeSnapshot {
             topics: ros_topics
                 .iter()
                 .map(|topic| {
-                    RosTopicRecord::from_info(topic, metric_by_topic.get(topic.name.as_str()).copied())
+                    RosTopicRecord::from_info(
+                        topic,
+                        metric_by_topic.get(topic.name.as_str()).copied(),
+                    )
                 })
                 .collect(),
             edges: ros_edges.iter().map(RosEdgeRecord::from).collect(),

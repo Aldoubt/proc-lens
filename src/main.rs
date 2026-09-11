@@ -8,8 +8,8 @@ use proc_lens::app::{Inspector, format_inspect, format_snapshot};
 use proc_lens::classifier::ProcessType;
 use proc_lens::collector::thread::ThreadCollector;
 use proc_lens::ros2_probe::{
-    CliRosGraphProvider, CliRosTopicMetricsCollector, CliRosTopicTopologyProvider, RosGraphProvider,
-    RosTopicTopologyProvider,
+    CliRosGraphProvider, CliRosTopicMetricsCollector, CliRosTopicTopologyProvider,
+    RosGraphProvider, RosTopicTopologyProvider,
 };
 use proc_lens::runtime::RuntimeSnapshot;
 
