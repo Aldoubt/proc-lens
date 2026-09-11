@@ -8,7 +8,7 @@ use crate::classifier::ProcessType;
 use crate::collector::thread::ThreadSnapshot;
 use crate::process::{ProcessIdentity, ProcessSnapshot};
 use crate::provenance::resolve_all_provenance;
-use crate::ros2_probe::{RosNodeInfo, RosProcessMapper};
+use crate::ros2_probe::{RosNodeInfo, RosProcessMapper, RosTopicEdge, RosTopicInfo};
 
 pub const RUNTIME_SCHEMA_VERSION: u32 = 1;
 
@@ -86,6 +86,44 @@ impl RosNodeRecord {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RosTopicRecord {
+    pub name: String,
+    pub message_types: Vec<String>,
+    pub publishers: Vec<String>,
+    pub subscribers: Vec<String>,
+}
+
+impl From<&RosTopicInfo> for RosTopicRecord {
+    fn from(topic: &RosTopicInfo) -> Self {
+        Self {
+            name: topic.name.clone(),
+            message_types: topic.message_types.clone(),
+            publishers: topic.publishers.clone(),
+            subscribers: topic.subscribers.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RosEdgeRecord {
+    pub topic: String,
+    pub publisher_node: String,
+    pub subscriber_node: String,
+    pub message_types: Vec<String>,
+}
+
+impl From<&RosTopicEdge> for RosEdgeRecord {
+    fn from(edge: &RosTopicEdge) -> Self {
+        Self {
+            topic: edge.topic.clone(),
+            publisher_node: edge.publisher_node.clone(),
+            subscriber_node: edge.subscriber_node.clone(),
+            message_types: edge.message_types.clone(),
+        }
+    }
+}
+
 impl From<&ThreadSnapshot> for ThreadRecord {
     fn from(thread: &ThreadSnapshot) -> Self {
         Self {
@@ -114,20 +152,25 @@ pub struct RuntimeSnapshot {
     pub processes: Vec<ProcessRecord>,
     pub threads: Vec<ThreadRecord>,
     pub ros_nodes: Vec<RosNodeRecord>,
-    pub topics: Vec<serde_json::Value>,
-    pub edges: Vec<serde_json::Value>,
+    pub topics: Vec<RosTopicRecord>,
+    pub edges: Vec<RosEdgeRecord>,
     pub findings: Vec<serde_json::Value>,
     pub ros_graph_discovery_elapsed_ms: Option<u128>,
+    pub ros_topic_topology_elapsed_ms: Option<u128>,
 }
 
 impl RuntimeSnapshot {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_app(
         app: &AppSnapshot,
         thread_samples: &[ThreadSnapshot],
         filter: Option<ProcessType>,
         ros_nodes: &[RosNodeInfo],
+        ros_topics: &[RosTopicInfo],
+        ros_edges: &[RosTopicEdge],
         ros_graph_discovery_elapsed_ms: Option<u128>,
+        ros_topic_topology_elapsed_ms: Option<u128>,
     ) -> Self {
         let provenance = resolve_all_provenance(&app.processes);
         let mut selected_processes = HashSet::new();
@@ -191,10 +234,11 @@ impl RuntimeSnapshot {
             processes,
             threads,
             ros_nodes,
-            topics: Vec::new(),
-            edges: Vec::new(),
+            topics: ros_topics.iter().map(RosTopicRecord::from).collect(),
+            edges: ros_edges.iter().map(RosEdgeRecord::from).collect(),
             findings: Vec::new(),
             ros_graph_discovery_elapsed_ms,
+            ros_topic_topology_elapsed_ms,
         }
     }
 
@@ -245,6 +289,7 @@ mod tests {
             edges: Vec::new(),
             findings: Vec::new(),
             ros_graph_discovery_elapsed_ms: None,
+            ros_topic_topology_elapsed_ms: None,
         };
 
         let value = serde_json::to_value(snapshot).expect("runtime snapshot should serialize");
@@ -252,6 +297,7 @@ mod tests {
         assert!(value["threads"][0]["cpu_percent"].is_null());
         assert!(value["threads"][0]["last_cpu"].is_null());
         assert_eq!(value["ros_nodes"], serde_json::json!([]));
+        assert_eq!(value["topics"], serde_json::json!([]));
         assert_eq!(value["edges"], serde_json::json!([]));
     }
 

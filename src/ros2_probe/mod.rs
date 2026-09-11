@@ -13,4 +13,7 @@ pub use node_scanner::{
 pub use process_mapper::{
     MappingConfidence, MappingSource, RosNodeMapping, RosProcessBinding, RosProcessMapper,
 };
-pub use topic_stats::{RosTopicStat, RosTopicStatsCollector};
+pub use topic_stats::{
+    CliRosTopicTopologyProvider, RosNodeTopology, RosTopicEdge, RosTopicEndpoint, RosTopicInfo,
+    RosTopicStat, RosTopicStatsCollector, RosTopicTopologyProvider,
+};
