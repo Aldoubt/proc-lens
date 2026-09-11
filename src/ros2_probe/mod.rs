@@ -5,6 +5,7 @@
 
 pub mod node_scanner;
 pub mod process_mapper;
+pub mod topic_metrics;
 pub mod topic_stats;
 
 pub use node_scanner::{
@@ -13,6 +14,7 @@ pub use node_scanner::{
 pub use process_mapper::{
     MappingConfidence, MappingSource, RosNodeMapping, RosProcessBinding, RosProcessMapper,
 };
+pub use topic_metrics::{CliRosTopicMetricsCollector, MetricConfidence, RosTopicMetric};
 pub use topic_stats::{
     CliRosTopicTopologyProvider, RosNodeTopology, RosTopicEdge, RosTopicEndpoint, RosTopicInfo,
     RosTopicStat, RosTopicStatsCollector, RosTopicTopologyProvider,

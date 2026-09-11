@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -8,7 +8,9 @@ use crate::classifier::ProcessType;
 use crate::collector::thread::ThreadSnapshot;
 use crate::process::{ProcessIdentity, ProcessSnapshot};
 use crate::provenance::resolve_all_provenance;
-use crate::ros2_probe::{RosNodeInfo, RosProcessMapper, RosTopicEdge, RosTopicInfo};
+use crate::ros2_probe::{
+    RosNodeInfo, RosProcessMapper, RosTopicEdge, RosTopicInfo, RosTopicMetric,
+};
 
 pub const RUNTIME_SCHEMA_VERSION: u32 = 1;
 
@@ -86,21 +88,48 @@ impl RosNodeRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RosTopicMetricRecord {
+    pub receive_frequency_hz: Option<f64>,
+    pub mean_message_bytes: Option<u64>,
+    pub receive_bandwidth_bytes_per_sec: Option<u64>,
+    pub sample_count: Option<u64>,
+    pub observation_window_ms: u128,
+    pub source: String,
+    pub confidence: String,
+}
+
+impl From<&RosTopicMetric> for RosTopicMetricRecord {
+    fn from(metric: &RosTopicMetric) -> Self {
+        Self {
+            receive_frequency_hz: metric.receive_frequency_hz,
+            mean_message_bytes: metric.mean_message_bytes,
+            receive_bandwidth_bytes_per_sec: metric.receive_bandwidth_bytes_per_sec,
+            sample_count: metric.sample_count,
+            observation_window_ms: metric.observation_window_ms,
+            source: metric.source.clone(),
+            confidence: metric.confidence.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RosTopicRecord {
     pub name: String,
     pub message_types: Vec<String>,
     pub publishers: Vec<String>,
     pub subscribers: Vec<String>,
+    pub metrics: Option<RosTopicMetricRecord>,
 }
 
-impl From<&RosTopicInfo> for RosTopicRecord {
-    fn from(topic: &RosTopicInfo) -> Self {
+impl RosTopicRecord {
+    fn from_info(topic: &RosTopicInfo, metric: Option<&RosTopicMetric>) -> Self {
         Self {
             name: topic.name.clone(),
             message_types: topic.message_types.clone(),
             publishers: topic.publishers.clone(),
             subscribers: topic.subscribers.clone(),
+            metrics: metric.map(RosTopicMetricRecord::from),
         }
     }
 }
@@ -157,6 +186,7 @@ pub struct RuntimeSnapshot {
     pub findings: Vec<serde_json::Value>,
     pub ros_graph_discovery_elapsed_ms: Option<u128>,
     pub ros_topic_topology_elapsed_ms: Option<u128>,
+    pub ros_topic_metrics_elapsed_ms: Option<u128>,
 }
 
 impl RuntimeSnapshot {
@@ -169,8 +199,10 @@ impl RuntimeSnapshot {
         ros_nodes: &[RosNodeInfo],
         ros_topics: &[RosTopicInfo],
         ros_edges: &[RosTopicEdge],
+        ros_topic_metrics: &[RosTopicMetric],
         ros_graph_discovery_elapsed_ms: Option<u128>,
         ros_topic_topology_elapsed_ms: Option<u128>,
+        ros_topic_metrics_elapsed_ms: Option<u128>,
     ) -> Self {
         let provenance = resolve_all_provenance(&app.processes);
         let mut selected_processes = HashSet::new();
@@ -227,6 +259,11 @@ impl RuntimeSnapshot {
             .map(RosNodeRecord::from_mapping)
             .collect();
 
+        let metric_by_topic: BTreeMap<&str, &RosTopicMetric> = ros_topic_metrics
+            .iter()
+            .map(|metric| (metric.topic.as_str(), metric))
+            .collect();
+
         Self {
             schema_version: RUNTIME_SCHEMA_VERSION,
             timestamp_ns: now_ns(),
@@ -234,11 +271,17 @@ impl RuntimeSnapshot {
             processes,
             threads,
             ros_nodes,
-            topics: ros_topics.iter().map(RosTopicRecord::from).collect(),
+            topics: ros_topics
+                .iter()
+                .map(|topic| {
+                    RosTopicRecord::from_info(topic, metric_by_topic.get(topic.name.as_str()).copied())
+                })
+                .collect(),
             edges: ros_edges.iter().map(RosEdgeRecord::from).collect(),
             findings: Vec::new(),
             ros_graph_discovery_elapsed_ms,
             ros_topic_topology_elapsed_ms,
+            ros_topic_metrics_elapsed_ms,
         }
     }
 
@@ -290,6 +333,7 @@ mod tests {
             findings: Vec::new(),
             ros_graph_discovery_elapsed_ms: None,
             ros_topic_topology_elapsed_ms: None,
+            ros_topic_metrics_elapsed_ms: None,
         };
 
         let value = serde_json::to_value(snapshot).expect("runtime snapshot should serialize");
