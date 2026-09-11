@@ -118,16 +118,14 @@ fn is_infrastructure_topic(topic: &str) -> bool {
 }
 
 fn observe_topic(topic: String, sample_window: Duration) -> RosTopicMetric {
-    let bw_output = run_sampling_command(&["topic", "bw", topic.as_str()], sample_window)
-        .unwrap_or_default();
+    let bw_output =
+        run_sampling_command(&["topic", "bw", topic.as_str()], sample_window).unwrap_or_default();
 
     let (receive_bandwidth_bytes_per_sec, mean_message_bytes, sample_count) =
         parse_bandwidth(&bw_output);
     let receive_frequency_hz = receive_bandwidth_bytes_per_sec
         .zip(mean_message_bytes)
-        .and_then(|(bandwidth, mean)| {
-            (mean > 0).then_some(bandwidth as f64 / mean as f64)
-        });
+        .and_then(|(bandwidth, mean)| (mean > 0).then_some(bandwidth as f64 / mean as f64));
 
     let confidence = match (
         receive_bandwidth_bytes_per_sec,
