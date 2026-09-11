@@ -72,6 +72,8 @@ def text_report(report: dict[str, Any]) -> str:
         f"threads >= processes: {report['thread_count'] >= report['process_count']} (reported only)",
         f"ros graph discovery elapsed_ms: {report['ros_graph_discovery_elapsed_ms']!s}",
         f"ros topic topology elapsed_ms: {report['ros_topic_topology_elapsed_ms']!s}",
+        f"ros topic metrics elapsed_ms: {report['ros_topic_metrics_elapsed_ms']!s}",
+        f"measured topics: {report['measured_topic_count']}",
         f"ros_nodes: {report['ros_node_count']} ({ros_status})",
         f"topics: {report['topic_count']} ({topic_status})",
         f"edges: {report['edge_count']} ({edge_status})",
@@ -83,6 +85,16 @@ def text_report(report: dict[str, Any]) -> str:
         f"  {item['pid']:>6} {item['cpu_percent']!s:>8} {item['name']} [{item['process_type']}]"
         for item in report["top_cpu_processes"]
     )
+    if report["topic_metrics"]:
+        lines.append("Observed ROS topic metrics:")
+        lines.extend(
+            "  "
+            + item["name"]
+            + f" hz={item.get('receive_frequency_hz')} size={item.get('mean_message_bytes')}B"
+            + f" bw={item.get('receive_bandwidth_bytes_per_sec')}B/s"
+            + f" confidence={item.get('confidence')}"
+            for item in report["topic_metrics"]
+        )
     lines.append("Top 20 CPU threads:")
     lines.extend(
         f"  {item['pid']:>6}/{item['tid']:<6} {item['cpu_percent']!s:>8} {item['name']}"
@@ -151,7 +163,11 @@ def build_report(snapshot: dict[str, Any]) -> dict[str, Any]:
     topology_elapsed = snapshot.get("ros_topic_topology_elapsed_ms")
     if topology_elapsed is not None:
         number(topology_elapsed, "ros_topic_topology_elapsed_ms")
+    metrics_elapsed = snapshot.get("ros_topic_metrics_elapsed_ms")
+    if metrics_elapsed is not None:
+        number(metrics_elapsed, "ros_topic_metrics_elapsed_ms")
 
+    observed_topic_metrics: list[dict[str, Any]] = []
     for topic in topics:
         topic_obj = require_object(topic, "topics[]")
         if not isinstance(topic_obj.get("name"), str) or not topic_obj["name"].startswith("/"):
@@ -160,6 +176,31 @@ def build_report(snapshot: dict[str, Any]) -> dict[str, Any]:
             values = require_array(topic_obj.get(field), f"topic.{field}")
             if not all(isinstance(value, str) for value in values):
                 fail(f"topic.{field} must contain strings")
+        metrics = topic_obj.get("metrics")
+        if metrics is not None:
+            metric_obj = require_object(metrics, "topic.metrics")
+            for field in (
+                "receive_frequency_hz",
+                "mean_message_bytes",
+                "receive_bandwidth_bytes_per_sec",
+                "sample_count",
+                "observation_window_ms",
+            ):
+                value = metric_obj.get(field)
+                if value is not None:
+                    number(value, f"topic.metrics.{field}")
+            source = metric_obj.get("source")
+            if not isinstance(source, str) or not source:
+                fail("topic.metrics.source must be non-empty")
+            confidence = metric_obj.get("confidence")
+            if confidence not in {"observed", "partial", "unknown"}:
+                fail("topic.metrics.confidence must be observed, partial, or unknown")
+            observed_topic_metrics.append(
+                {
+                    "name": topic_obj["name"],
+                    **metric_obj,
+                }
+            )
 
     for edge in edges:
         edge_obj = require_object(edge, "edges[]")
@@ -184,10 +225,13 @@ def build_report(snapshot: dict[str, Any]) -> dict[str, Any]:
         "thread_count": len(threads),
         "ros_node_count": len(ros_nodes),
         "topic_count": len(topics),
+        "measured_topic_count": len(observed_topic_metrics),
+        "topic_metrics": observed_topic_metrics,
         "edge_count": len(edges),
         "finding_count": len(findings),
         "ros_graph_discovery_elapsed_ms": graph_elapsed,
         "ros_topic_topology_elapsed_ms": topology_elapsed,
+        "ros_topic_metrics_elapsed_ms": metrics_elapsed,
         "top_cpu_processes": sorted(processes, key=cpu_sort_key, reverse=True)[:20],
         "top_cpu_threads": sorted(threads, key=cpu_sort_key, reverse=True)[:20],
         "top_thread_count_processes": sorted(processes, key=lambda item: item.get("thread_count", 0), reverse=True)[:20],
