@@ -165,7 +165,7 @@ for field in ("receive_frequency_hz", "mean_message_bytes", "receive_bandwidth_b
     value = metrics.get(field)
     if not isinstance(value, (int, float)) or value <= 0:
         raise SystemExit(f"invalid /chatter metric {field}: {value!r}")
-if metrics.get("confidence") not in {"observed", "partial"}:
+if metrics.get("confidence") not in {"estimated", "partial"}:
     raise SystemExit(f"unexpected /chatter metric confidence: {metrics.get('confidence')!r}")
 
 with open(summary_path, "a") as output:

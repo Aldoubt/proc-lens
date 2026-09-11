@@ -1,8 +1,9 @@
 //! Low-overhead ROS 2 topic metric sampling.
 //!
-//! Metrics are observed from temporary ROS 2 CLI subscriptions. They describe
-//! receive-side behavior during a bounded sampling window, not publisher-side
-//! scheduling guarantees.
+//! Metrics are observed from one temporary ROS 2 CLI bandwidth subscription per
+//! selected topic. Receive frequency is derived from observed bandwidth divided
+//! by observed mean message size, avoiding a second intrusive subscription.
+//! These values describe bounded receive-side behavior, not publisher guarantees.
 
 use std::fmt::{Display, Formatter};
 use std::io;
@@ -18,6 +19,7 @@ const DEFAULT_MAX_TOPICS: usize = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetricConfidence {
     Observed,
+    Estimated,
     Partial,
     Unknown,
 }
@@ -26,6 +28,7 @@ impl Display for MetricConfidence {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::Observed => "observed",
+            Self::Estimated => "estimated",
             Self::Partial => "partial",
             Self::Unknown => "unknown",
         })
@@ -115,43 +118,24 @@ fn is_infrastructure_topic(topic: &str) -> bool {
 }
 
 fn observe_topic(topic: String, sample_window: Duration) -> RosTopicMetric {
-    let hz_topic = topic.clone();
-    let bw_topic = topic.clone();
-
-    let hz_handle = thread::spawn(move || {
-        run_sampling_command(&["topic", "hz", hz_topic.as_str()], sample_window)
-    });
-    let bw_handle = thread::spawn(move || {
-        run_sampling_command(&["topic", "bw", bw_topic.as_str()], sample_window)
-    });
-
-    let hz_output = hz_handle
-        .join()
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or_default();
-    let bw_output = bw_handle
-        .join()
-        .ok()
-        .and_then(Result::ok)
+    let bw_output = run_sampling_command(&["topic", "bw", topic.as_str()], sample_window)
         .unwrap_or_default();
 
-    let receive_frequency_hz = parse_hz(&hz_output);
     let (receive_bandwidth_bytes_per_sec, mean_message_bytes, sample_count) =
         parse_bandwidth(&bw_output);
+    let receive_frequency_hz = receive_bandwidth_bytes_per_sec
+        .zip(mean_message_bytes)
+        .and_then(|(bandwidth, mean)| {
+            (mean > 0).then_some(bandwidth as f64 / mean as f64)
+        });
 
-    let populated = [
-        receive_frequency_hz.is_some(),
-        mean_message_bytes.is_some(),
-        receive_bandwidth_bytes_per_sec.is_some(),
-    ]
-    .into_iter()
-    .filter(|value| *value)
-    .count();
-
-    let confidence = match populated {
-        3 => MetricConfidence::Observed,
-        1 | 2 => MetricConfidence::Partial,
+    let confidence = match (
+        receive_bandwidth_bytes_per_sec,
+        mean_message_bytes,
+        receive_frequency_hz,
+    ) {
+        (Some(_), Some(_), Some(_)) => MetricConfidence::Estimated,
+        (Some(_), _, _) | (_, Some(_), _) => MetricConfidence::Partial,
         _ => MetricConfidence::Unknown,
     };
 
@@ -162,7 +146,7 @@ fn observe_topic(topic: String, sample_window: Duration) -> RosTopicMetric {
         receive_bandwidth_bytes_per_sec,
         sample_count,
         observation_window_ms: sample_window.as_millis(),
-        source: "ros2_cli_hz+bw".to_owned(),
+        source: "ros2_cli_bw+derived_rate".to_owned(),
         confidence,
     }
 }
@@ -190,14 +174,6 @@ fn run_sampling_command(args: &[&str], sample_window: Duration) -> io::Result<St
             None => thread::sleep(Duration::from_millis(20)),
         }
     }
-}
-
-fn parse_hz(output: &str) -> Option<f64> {
-    output.lines().rev().find_map(|line| {
-        line.trim()
-            .strip_prefix("average rate:")
-            .and_then(|value| value.trim().parse::<f64>().ok())
-    })
 }
 
 fn parse_bandwidth(output: &str) -> (Option<u64>, Option<u64>, Option<u64>) {
@@ -244,8 +220,7 @@ fn parse_bytes(value: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CliRosTopicMetricsCollector, MetricConfidence, parse_bandwidth, parse_hz,
-        select_metric_topics,
+        CliRosTopicMetricsCollector, MetricConfidence, parse_bandwidth, select_metric_topics,
     };
     use crate::ros2_probe::RosTopicInfo;
     use std::time::Duration;
@@ -263,13 +238,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_ros2_topic_hz_output() {
-        let output =
-            "average rate: 9.995\n\tmin: 0.099s max: 0.101s std dev: 0.00050s window: 10\n";
-        assert_eq!(parse_hz(output), Some(9.995));
-    }
-
-    #[test]
     fn parses_ros2_topic_bw_output_using_decimal_units() {
         let output =
             "5.20 MB/s from 100 messages\n\tMessage size mean: 0.08 MB min: 0.08 MB max: 0.08 MB\n";
@@ -277,6 +245,8 @@ mod tests {
         assert_eq!(bandwidth, Some(5_200_000));
         assert_eq!(mean, Some(80_000));
         assert_eq!(samples, Some(100));
+        let derived_hz = bandwidth.unwrap() as f64 / mean.unwrap() as f64;
+        assert_eq!(derived_hz, 65.0);
     }
 
     #[test]

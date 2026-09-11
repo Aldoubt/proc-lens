@@ -193,8 +193,8 @@ def build_report(snapshot: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(source, str) or not source:
                 fail("topic.metrics.source must be non-empty")
             confidence = metric_obj.get("confidence")
-            if confidence not in {"observed", "partial", "unknown"}:
-                fail("topic.metrics.confidence must be observed, partial, or unknown")
+            if confidence not in {"observed", "estimated", "partial", "unknown"}:
+                fail("topic.metrics.confidence must be observed, estimated, partial, or unknown")
             observed_topic_metrics.append(
                 {
                     "name": topic_obj["name"],
