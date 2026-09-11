@@ -8,7 +8,8 @@ use proc_lens::app::{Inspector, format_inspect, format_snapshot};
 use proc_lens::classifier::ProcessType;
 use proc_lens::collector::thread::ThreadCollector;
 use proc_lens::ros2_probe::{
-    CliRosGraphProvider, CliRosTopicTopologyProvider, RosGraphProvider, RosTopicTopologyProvider,
+    CliRosGraphProvider, CliRosTopicMetricsCollector, CliRosTopicTopologyProvider,
+    RosGraphProvider, RosTopicTopologyProvider,
 };
 use proc_lens::runtime::RuntimeSnapshot;
 
@@ -106,6 +107,13 @@ fn sampled_runtime_snapshot(filter: Option<ProcessType>) -> io::Result<RuntimeSn
         .map(|(topics, edges, elapsed)| (topics, edges, Some(elapsed.as_millis())))
         .unwrap_or_default();
 
+    let (ros_topic_metrics, metrics_elapsed) = if ros_topics.is_empty() {
+        (Vec::new(), None)
+    } else {
+        let (metrics, elapsed) = CliRosTopicMetricsCollector::default().collect(&ros_topics);
+        (metrics, Some(elapsed.as_millis()))
+    };
+
     Ok(RuntimeSnapshot::from_app(
         &snapshot,
         &threads,
@@ -113,7 +121,9 @@ fn sampled_runtime_snapshot(filter: Option<ProcessType>) -> io::Result<RuntimeSn
         &ros_nodes,
         &ros_topics,
         &ros_edges,
+        &ros_topic_metrics,
         graph_elapsed,
         topology_elapsed,
+        metrics_elapsed,
     ))
 }

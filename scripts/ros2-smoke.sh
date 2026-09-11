@@ -92,7 +92,7 @@ with open(summary_path, "a") as output:
     output.write("  ROS graph nodes: see ros-nodes.txt\n")
     output.write("  Linux PID/process snapshot: see processes.txt\n")
     output.write("  proc-lens ROS2 classification: see ros-snapshot.txt and processes.txt\n")
-    output.write("  topics/edges: topology implemented; Hz/bandwidth remain NOT IMPLEMENTED\n")
+    output.write("  topics/edges: topology implemented; bounded Hz/size/bandwidth metrics enabled\n")
     output.write("  ROS node -> PID mapping: see ROS node mappings below\n")
 PY
 python3 - "$artifact_dir/runtime.json" "$artifact_dir/summary.txt" <<'PY'
@@ -157,5 +157,24 @@ with open(summary_path, "a") as output:
         f"subscribers={chatter['subscribers']} types={chatter['message_types']}\n"
     )
     output.write("  edge: /talker -> /chatter -> /listener PASS\n")
+
+metrics = chatter.get("metrics")
+if not metrics:
+    raise SystemExit("missing bounded metrics for /chatter")
+for field in ("receive_frequency_hz", "mean_message_bytes", "receive_bandwidth_bytes_per_sec"):
+    value = metrics.get(field)
+    if not isinstance(value, (int, float)) or value <= 0:
+        raise SystemExit(f"invalid /chatter metric {field}: {value!r}")
+if metrics.get("confidence") not in {"estimated", "partial"}:
+    raise SystemExit(f"unexpected /chatter metric confidence: {metrics.get('confidence')!r}")
+
+with open(summary_path, "a") as output:
+    output.write(
+        "  metrics: "
+        f"hz={metrics['receive_frequency_hz']} "
+        f"mean_bytes={metrics['mean_message_bytes']} "
+        f"bandwidth_Bps={metrics['receive_bandwidth_bytes_per_sec']} "
+        f"confidence={metrics['confidence']} PASS\n"
+    )
 PY
 echo "PASS: proc-lens and ROS2 smoke commands completed" | tee -a "$artifact_dir/summary.txt"
